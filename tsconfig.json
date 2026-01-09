@@ -10,9 +10,6 @@
     "sourceMap": true,
     "outDir": "./lib",
     "baseUrl": "./",
-    "paths": {
-      "src/*": ["src/*"]
-    },
     "incremental": true,
     "skipLibCheck": true
   }
