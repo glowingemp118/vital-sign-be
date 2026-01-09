@@ -13,6 +13,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'debug'],
   });
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.get('/', (req, res) => {
+    res.send('Hello from Node-Nest.js!');
+  });
+  expressApp.get('/favicon.ico', (req, res) => res.status(204).end());
+  expressApp.get('/favicon.png', (req, res) => res.status(204).end());
   app.setGlobalPrefix('api');
   app.useGlobalInterceptors(new ResponseInterceptor());
   // Enable global validation pipe with additional configuration
