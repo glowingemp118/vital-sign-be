@@ -26,7 +26,7 @@
     "@nestjs/mapped-types": "*",
     "@nestjs/mongoose": "^10.0.6",
     "@nestjs/platform-express": "^10.4.21",
-    "@nestjs/platform-socket.io": "^11.1.11",
+    "@nestjs/platform-socket.io": "^10.4.21",
     "@nestjs/swagger": "^11.2.3",
     "@nestjs/throttler": "^5.1.2",
     "@nestjs/websockets": "^10.4.21",
