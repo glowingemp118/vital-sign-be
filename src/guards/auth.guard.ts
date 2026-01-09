@@ -5,11 +5,11 @@ import {
   ExecutionContext,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { JWT_SECRET } from 'src/constants/constants';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { Reflector } from '@nestjs/core';
 import { sign } from 'jsonwebtoken';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'Some Complex Secrete Value';
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -76,7 +76,7 @@ export function generateToken(payload: any, onlyAccessToken = false): any {
         expiresIn: '1h',
       }),
       expiresIn: Date.now() + 3600000,
-    }
+    },
   };
   if (!onlyAccessToken) {
     result.refresh_token = {
