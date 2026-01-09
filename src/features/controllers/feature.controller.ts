@@ -4,6 +4,7 @@ import {
   Get,
   Post,
   Put,
+  Res,
   Request,
   UploadedFile,
   UseInterceptors,
@@ -13,12 +14,29 @@ import { Access } from 'src/decorators/public.decorator';
 import { FeatureService } from '../services/feature.services';
 import { CloudinaryService } from 'src/utils/cloudinary';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 @Controller('')
 export class FeatureController {
   constructor(
     private readonly featureService: FeatureService,
     private readonly cloudinaryService: CloudinaryService,
   ) {}
+
+  @Get('/')
+  root(@Res() res: Response) {
+    return res.send('Hello from Node.js!');
+  }
+
+  @Get('/favicon.ico')
+  faviconIco(@Res() res: Response) {
+    return res.status(204).end();
+  }
+
+  @Get('/favicon.png')
+  faviconPng(@Res() res: Response) {
+    return res.status(204).end();
+  }
+
   @Get('/doctor')
   @Access(UserType.User)
   async getDoctors(
