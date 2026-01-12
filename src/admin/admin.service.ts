@@ -11,14 +11,14 @@ import {
   ContactSupport,
 } from './schemas/admin.schema';
 import { Speciality, SpecialityDocument } from './schemas/speciality.schema';
-import { User, UserDocument } from 'src/user/schemas/user.schema';
+import { User, UserDocument } from '../user/schemas/user.schema';
 import * as bcrypt from 'bcrypt';
-import { generateToken } from 'src/guards/auth.guard';
-import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
-import { UserType } from 'src/user/dto/user.dto';
-import { Doctor, DoctorDocument } from 'src/user/schemas/doctor.schema';
-import { processObject } from 'src/utils/encrptdecrpt';
-import { addDr } from 'src/utils/appUtils';
+import { generateToken } from '../guards/auth.guard';
+import { finalRes, paginationPipeline } from '../utils/dbUtils';
+import { UserType } from '../user/dto/user.dto';
+import { Doctor, DoctorDocument } from '../user/schemas/doctor.schema';
+import { processObject } from '../utils/encrptdecrpt';
+import { addDr } from '../utils/appUtils';
 import { pipeline } from 'stream';
 
 @Injectable()

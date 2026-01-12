@@ -13,13 +13,13 @@ import {
   UserType,
 } from './dto/user.dto';
 import * as bcrypt from 'bcrypt';
-import { generateToken, validateRefreshToken } from 'src/guards/auth.guard';
-import { addDr, modifiedUser } from 'src/utils/appUtils';
-import { validateParams } from 'src/utils/validations';
+import { generateToken, validateRefreshToken } from '../guards/auth.guard';
+import { addDr, modifiedUser } from '../utils/appUtils';
+import { validateParams } from '../utils/validations';
 import { Doctor } from './schemas/doctor.schema';
-import { Speciality } from 'src/admin/schemas/speciality.schema';
+import { Speciality } from '../admin/schemas/speciality.schema';
 import { Device, DevicesDocument } from './schemas/devices.schema';
-import { processObject, processValue } from 'src/utils/encrptdecrpt';
+import { processObject, processValue } from '../utils/encrptdecrpt';
 
 @Injectable()
 export class UserService {

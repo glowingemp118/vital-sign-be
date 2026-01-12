@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose'; // Assuming you have a Doctor model
-import { Doctor } from 'src/user/schemas/doctor.schema';
-import { validateParams } from 'src/utils/validations';
-import { processObject } from 'src/utils/encrptdecrpt';
+import { Doctor } from '../../user/schemas/doctor.schema';
+import { validateParams } from '../../utils/validations';
+import { processObject } from '../../utils/encrptdecrpt';
 import {
   finalRes,
   paginationPipeline,
@@ -12,7 +12,7 @@ import {
   sort,
   specialitiesPipeline,
   userPipeline,
-} from 'src/utils/dbUtils';
+} from '../../utils/dbUtils';
 import { Review } from '../schemas/reviews.schema';
 @Injectable()
 export class FeatureService {

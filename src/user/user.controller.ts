@@ -14,7 +14,7 @@ import {
 import { UserService } from './user.service';
 import { SignInDto, CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Public } from 'src/decorators/public.decorator';
+import { Public } from '../decorators/public.decorator';
 
 @Controller('auth') // Change the controller prefix to '/auth'
 export class UserController {

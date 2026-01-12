@@ -5,12 +5,12 @@ import { RecordService } from './services/records.services';
 import { Record, RecordSchema } from './schemas/records.schema';
 import { AppointmentsController } from './controllers/appointments.controller';
 import { AppointmentsService } from './services/appointment.services';
-import { Doctor, DoctorSchema } from 'src/user/schemas/doctor.schema';
+import { Doctor, DoctorSchema } from '../user/schemas/doctor.schema';
 import { Appointment, AppointmentSchema } from './schemas/appointments.schema';
 import { Review, ReviewSchema } from './schemas/reviews.schema';
 import { FeatureController } from './controllers/feature.controller';
 import { FeatureService } from './services/feature.services';
-import { CloudinaryService } from 'src/utils/cloudinary';
+import { CloudinaryService } from '../utils/cloudinary';
 import { Vital, VitalSchema } from './schemas/vital.schema';
 
 @Module({

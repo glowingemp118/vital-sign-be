@@ -10,8 +10,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { Access, Public } from 'src/decorators/public.decorator';
-import { UserType } from 'src/user/dto/user.dto';
+import { Access, Public } from '../decorators/public.decorator';
+import { UserType } from '../user/dto/user.dto';
 
 @Controller('admin')
 export class AdminController {

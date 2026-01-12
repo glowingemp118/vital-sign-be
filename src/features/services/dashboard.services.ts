@@ -3,17 +3,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose'; // Assuming you have a Doctor model
 import * as moment from 'moment-timezone'; // For handling timezones
 import { Appointment } from '../schemas/appointments.schema';
-import { Doctor } from 'src/user/schemas/doctor.schema';
-import { validateParams } from 'src/utils/validations';
-import { processObject, processValue } from 'src/utils/encrptdecrpt';
+import { Doctor } from '../../user/schemas/doctor.schema';
+import { validateParams } from '../../utils/validations';
+import { processObject, processValue } from '../../utils/encrptdecrpt';
 import {
   appointmentPipeline,
   finalRes,
   paginationPipeline,
   searchPipeline,
   sort,
-} from 'src/utils/dbUtils';
-import { UserType } from 'src/user/dto/user.dto';
+} from '../../utils/dbUtils';
+import { UserType } from '../../user/dto/user.dto';
 import { Review } from '../schemas/reviews.schema';
 
 @Injectable()

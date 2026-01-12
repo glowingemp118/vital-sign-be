@@ -8,10 +8,10 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { UserType } from 'src/user/dto/user.dto';
-import { Access } from 'src/decorators/public.decorator';
+import { UserType } from '../../user/dto/user.dto';
+import { Access } from '../../decorators/public.decorator';
 import { FeatureService } from '../services/feature.services';
-import { CloudinaryService } from 'src/utils/cloudinary';
+import { CloudinaryService } from '../../utils/cloudinary';
 import { FileInterceptor } from '@nestjs/platform-express';
 @Controller('')
 export class FeatureController {

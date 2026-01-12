@@ -12,7 +12,7 @@ import { TodoService } from './todo.service';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
 import { ApiBearerAuth, ApiBody, ApiTags } from '@nestjs/swagger';
-import { VERSION } from 'src/constants/constants';
+import { VERSION } from '../constants/constants';
 
 @ApiTags('Todo')
 @Controller({

@@ -1,7 +1,7 @@
 import { Controller, Delete, Get, Post, Put, Request } from '@nestjs/common';
 import { AppointmentsService } from '../services/appointment.services';
-import { UserType } from 'src/user/dto/user.dto';
-import { Access } from 'src/decorators/public.decorator';
+import { UserType } from '../../user/dto/user.dto';
+import { Access } from '../../decorators/public.decorator';
 
 @Controller('appointment')
 export class AppointmentsController {

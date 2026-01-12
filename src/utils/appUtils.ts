@@ -1,4 +1,4 @@
-import { UserType } from 'src/user/dto/user.dto';
+import { UserType } from '../user/dto/user.dto';
 import { processObject } from './encrptdecrpt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import mongoose from 'mongoose';

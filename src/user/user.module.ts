@@ -3,14 +3,14 @@ import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './schemas/user.schema';
-import { JWT_SECRET } from 'src/constants/constants';
+import { JWT_SECRET } from '../constants/constants';
 import { JwtModule } from '@nestjs/jwt';
 import { Device, DeviceSchema } from './schemas/devices.schema';
 import { Doctor, DoctorSchema } from './schemas/doctor.schema';
 import {
   Speciality,
   SpecialitySchema,
-} from 'src/admin/schemas/speciality.schema';
+} from '../admin/schemas/speciality.schema';
 @Module({
   imports: [
     MongooseModule.forFeature([
