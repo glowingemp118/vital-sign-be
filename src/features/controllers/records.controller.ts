@@ -34,6 +34,12 @@ export class RecordController {
     return this.recordService.getVitals(req);
   }
 
+  @Get('/vital')
+  @ApiBearerAuth()
+  singleVital(@Request() req: any) {
+    return this.recordService.singleVital(req);
+  }
+
   @Get('/home')
   @ApiBearerAuth()
   homeRecords(@Request() req: any) {

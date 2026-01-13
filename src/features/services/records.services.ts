@@ -164,6 +164,23 @@ export class RecordService {
     return result;
   }
 
+  async singleVital(req: any): Promise<any> {
+    const { key, id } = req.query || {};
+    if (!key && !id) {
+      throw new Error('key or id query is required');
+    }
+    const q = {};
+    if (id) {
+      q['_id'] = new mongoose.Types.ObjectId(id);
+    }
+    if (key) {
+      q['key'] = { $regex: new RegExp(key.trim(), 'i') };
+    }
+    // Find the vital by key (case-insensitive)
+    const vital = await this.vitalModel.findOne(q).exec();
+    return vital;
+  }
+
   private formatGraphData(records: any[]): any[] {
     // Group records by recorded_at date (YYYY-MM-DD)
     const grouped: { [date: string]: any[] } = {};
