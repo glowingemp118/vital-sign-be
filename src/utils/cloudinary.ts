@@ -24,7 +24,15 @@ export class CloudinaryService {
             if (error) {
               reject(error);
             }
-            resolve(result);
+            if (!result) {
+              reject(new Error('File upload failed'));
+            }
+            const { format, public_id, version, secure_url } = result;
+            const resp = {
+              url: secure_url,
+              name: `v${version}/${public_id}.${format}`,
+            };
+            resolve(resp);
           })
           .end(file.buffer);
       });
