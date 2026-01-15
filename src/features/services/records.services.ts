@@ -70,7 +70,7 @@ export class RecordService {
 
     return newRecord.save();
   }
-  async bulkCreateUpdate(req: any): Promise<Record[]> {
+  async bulkCreateUpdate(req: any): Promise<any> {
     const bodyArray = Array.isArray(req.body) ? req.body : [req.body];
     const user = req.user;
     const results: Record[] = [];
@@ -84,8 +84,8 @@ export class RecordService {
         results.push(res.value);
       }
     }
-
-    return results;
+    const homeRes = await this.homeRecords({ user });
+    return homeRes;
   }
 
   async vitalRecords(req: any): Promise<any> {
@@ -100,9 +100,11 @@ export class RecordService {
       sort = 'desc',
     } = query || {};
     const uid = query?.uid || req?.user?._id;
+    console.log(uid);
+
     const isHome = home === 'true';
     const isActivity = activity === 'true';
-    const timeFilter = time || '24hrs';
+    const timeFilter = time || '7days';
 
     // Define vital keys for home
     let vitals: string[] = [];
@@ -145,7 +147,6 @@ export class RecordService {
     if (vitals.length) {
       match.vital = { $in: dvitals.map((v) => v._id) };
     }
-
     const records = await this.recordModel
       .find(match)
       .populate('vital')
@@ -160,6 +161,8 @@ export class RecordService {
         value: rec.value ? processValue(rec.value, 'decrypt') : rec.value,
       };
     });
+    console.log(result[0], result?.length);
+
     dvitals.forEach((vital) => {
       if (!result.some((r) => r?.vital.key === vital?.key)) {
         result.push({
@@ -199,10 +202,9 @@ export class RecordService {
       if (!grouped[date]) grouped[date] = [];
       let formatted: any = { value: rec.value, recorded_at: rec.recorded_at };
       if (rec.vital?.key === 'bloodPressure' && typeof rec.value === 'string') {
-        const [diastolic, systolic] = rec.value.split('/').map(Number) || [
-          '0',
-          '0',
-        ];
+        const [systolic = 0, diastolic = 0] = rec.value
+          .split('/')
+          .map(Number) || ['0', '0'];
         formatted = { ...formatted, diastolic, systolic };
       }
       grouped[date].push(formatted);
