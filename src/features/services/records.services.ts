@@ -6,7 +6,8 @@ import { validateParams } from '../../utils/validations';
 import { finalRes, paginationPipeline, sort } from '../../utils/dbUtils';
 import { processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
-import * as moment from 'moment-timezone';
+// import * as moment from 'moment-timezone';
+import moment from 'moment-timezone';
 import { time } from 'console';
 @Injectable()
 export class RecordService {
@@ -36,7 +37,7 @@ export class RecordService {
     const user = uid;
     // Use moment-timezone for date parsing
     const timezone = req?.user?.timzone || 'UTC';
-    recorded_at = moment.tz(recorded_at, timezone).toDate();
+    // recorded_at = moment.tz(recorded_at, timezone).toDate();
     vital = new mongoose.Types.ObjectId(vital);
     value = processValue(String(value), 'encrypt');
     status = status || 'normal';
@@ -52,9 +53,10 @@ export class RecordService {
 
     if (existing) {
       // Update existing record
-      existing.value = value;
-      existing.status = status;
-      return existing.save();
+      // existing.value = value;
+      // existing.status = status;
+      // return await existing.save();
+      return existing;
     }
 
     // Create new record
@@ -117,25 +119,21 @@ export class RecordService {
       .exec();
 
     // Time range calculation
-    let timezone = user?.timezone || 'UTC'; // Fixed typo from 'timzone' to 'timezone'
-    if (!moment.tz.names().includes(timezone)) {
-      console.error(`Invalid timezone: ${timezone}. Defaulting to UTC.`);
-      timezone = 'UTC';
-    }
-    let now = moment.tz(timezone);
-    let startDate = now.clone();
+    // let timezone = user?.timezone || 'UTC'; // Fixed typo from 'timzone' to 'timezone'
+    let now = new Date();
+    let startDate = new Date();
 
     if (from && to) {
-      startDate = moment.tz(from, timezone);
-      now = moment.tz(to, timezone);
+      startDate = new Date(from);
+      now = new Date(to);
     } else if (timeFilter === '24hrs') {
-      startDate = now.clone().subtract(1, 'day');
+      startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
     } else if (timeFilter === '7days') {
-      startDate = now.clone().subtract(7, 'days');
+      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     } else if (timeFilter === '30days') {
-      startDate = now.clone().subtract(30, 'days');
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     } else {
-      startDate = moment.tz(0, timezone); // all time
+      startDate = new Date(0); // all time
     }
 
     // Build query
