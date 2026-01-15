@@ -52,8 +52,21 @@ export class CreateUserDto {
   @IsEnum(UserType, { message: 'Invalid user type' })
   user_type?: number;
 
+  @IsOptional()
   @IsString()
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  image?: string;
+
+  @IsOptional()
+  @IsString()
+  device_id?: string;
+
+  @IsOptional()
+  @IsString()
+  device_type?: string;
 
   @IsOptional()
   @IsString()

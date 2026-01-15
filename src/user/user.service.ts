@@ -38,7 +38,17 @@ export class UserService {
   // Create user and save it to the database
   async createUser(dto: CreateUserDto): Promise<any> {
     try {
-      let { name, email, phone, password, user_type } = dto;
+      let {
+        name,
+        email,
+        phone,
+        password,
+        user_type,
+        timezone,
+        image,
+        device_id,
+        device_type,
+      } = dto;
       email = email.toLowerCase().trim();
       if (user_type === UserType.Doctor) {
         validateParams(this.doctorModel.schema, dto, {
@@ -73,7 +83,9 @@ export class UserService {
       });
 
       let savedUser: any = await user.save();
-
+      if (dto?.device_id && dto?.device_type) {
+        await this.upsertDevice(savedUser._id, dto.device_id, dto.device_type);
+      }
       if (user_type === UserType.Doctor) {
         savedUser = savedUser.toObject();
         savedUser.doctor = await addDr(user, dto, {

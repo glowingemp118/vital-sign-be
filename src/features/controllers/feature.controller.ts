@@ -9,7 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { UserType } from '../../user/dto/user.dto';
-import { Access } from '../../decorators/public.decorator';
+import { Access, Public } from '../../decorators/public.decorator';
 import { FeatureService } from '../services/feature.services';
 import { CloudinaryService } from '../../utils/cloudinary';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -48,6 +48,14 @@ export class FeatureController {
   @Post('/file/upload')
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
+    return await this.cloudinaryService.uploadFile(file);
+  }
+
+  //files
+  @Post('/file/upload/public')
+  @Public()
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFilePublic(@UploadedFile() file: Express.Multer.File) {
     return await this.cloudinaryService.uploadFile(file);
   }
 }

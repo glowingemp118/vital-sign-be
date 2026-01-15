@@ -132,8 +132,8 @@ export class RecordService {
       startDate = now.clone().subtract(1, 'day');
     } else if (timeFilter === '7days') {
       startDate = now.clone().subtract(7, 'days');
-    } else if (timeFilter === '1month') {
-      startDate = now.clone().subtract(1, 'month');
+    } else if (timeFilter === '30days') {
+      startDate = now.clone().subtract(30, 'days');
     } else {
       startDate = moment.tz(0, timezone); // all time
     }
@@ -156,11 +156,22 @@ export class RecordService {
       .exec();
 
     // Decrypt values
-    const result = records.map((rec: any) => ({
-      ...rec,
-      value: rec.value ? processValue(rec.value, 'decrypt') : rec.value,
-    }));
-
+    const result = records.map((rec: any) => {
+      return {
+        ...rec,
+        value: rec.value ? processValue(rec.value, 'decrypt') : rec.value,
+      };
+    });
+    dvitals.forEach((vital) => {
+      if (!result.some((r) => r?.vital.key === vital?.key)) {
+        result.push({
+          recorded_at: new Date(),
+          vital,
+          value: '0',
+          status: 'normal',
+        });
+      }
+    });
     return result;
   }
 
@@ -190,7 +201,10 @@ export class RecordService {
       if (!grouped[date]) grouped[date] = [];
       let formatted: any = { value: rec.value, recorded_at: rec.recorded_at };
       if (rec.vital?.key === 'bloodPressure' && typeof rec.value === 'string') {
-        const [diastolic, systolic] = rec.value.split('/').map(Number);
+        const [diastolic, systolic] = rec.value.split('/').map(Number) || [
+          '0',
+          '0',
+        ];
         formatted = { ...formatted, diastolic, systolic };
       }
       grouped[date].push(formatted);
@@ -207,7 +221,7 @@ export class RecordService {
 
   async homeRecords(req: any) {
     const user = req.user;
-
+    const { time } = req.query || {};
     // Get latest home vitals, sorted by homeVitals order
     const homeResRaw = await this.vitalRecords({
       query: { home: 'true' },
@@ -223,11 +237,12 @@ export class RecordService {
       query: { vital: 'steps' },
       user,
     });
+
     const activityRes = activityResRaw[0] || null;
 
     // Get blood pressure graph data for 7 days
     const bpRes = await this.vitalRecords({
-      query: { vital: 'bloodPressure', time: '7days' },
+      query: { vital: 'bloodPressure', time: time || '7days' },
       user,
     });
     const bpGraph = this.formatGraphData(bpRes);
@@ -235,7 +250,7 @@ export class RecordService {
     return {
       records: homeRes,
       activity: activityRes,
-      trendGraph: bpGraph,
+      trendGraph: bpGraph || [],
     };
   }
 
@@ -246,6 +261,14 @@ export class RecordService {
     if (!vital) {
       throw new Error('vital query  is required');
     }
+
+    const vitalDoc = await this.vitalModel
+      .findOne({ key: vital })
+      .lean()
+      .exec();
+    if (!vitalDoc) {
+      throw new Error('Vital not found');
+    }
     // Get latest home vitals, sorted by homeVitals order
     const vRes = await this.vitalRecords({
       query: { vital: vital, time: time },
@@ -253,8 +276,8 @@ export class RecordService {
     });
     const tGraph = this.formatGraphData(vRes);
     return {
-      record: vRes[0] || null,
-      trendGraph: tGraph,
+      record: vRes[0] || { vital: vitalDoc },
+      trendGraph: tGraph || [],
     };
   }
 
@@ -270,7 +293,7 @@ export class RecordService {
     const [res24hrs, res7days, res1month] = await Promise.all([
       getRecords('24hrs'),
       getRecords('7days'),
-      getRecords('1month'),
+      getRecords('30days'),
     ]);
 
     const getUniqueRecords = (res: any[]) =>
