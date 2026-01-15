@@ -7,7 +7,7 @@ import { finalRes, paginationPipeline, sort } from '../../utils/dbUtils';
 import { processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
 // import * as moment from 'moment-timezone';
-import moment from 'moment-timezone';
+// import moment from 'moment-timezone';
 import { time } from 'console';
 @Injectable()
 export class RecordService {
@@ -195,7 +195,7 @@ export class RecordService {
     const grouped: { [date: string]: any[] } = {};
 
     records.forEach((rec: any) => {
-      const date = moment(rec.recorded_at).format('YYYY-MM-DD');
+      const date = new Date(rec.recorded_at).toISOString().split('T')[0];
       if (!grouped[date]) grouped[date] = [];
       let formatted: any = { value: rec.value, recorded_at: rec.recorded_at };
       if (rec.vital?.key === 'bloodPressure' && typeof rec.value === 'string') {
