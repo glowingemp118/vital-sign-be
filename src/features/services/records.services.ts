@@ -8,7 +8,6 @@ import { processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
 // import * as moment from 'moment-timezone';
 // import moment from 'moment-timezone';
-import { time } from 'console';
 @Injectable()
 export class RecordService {
   constructor(
@@ -21,7 +20,7 @@ export class RecordService {
     'oxygenSaturation',
     'bloodGlucose',
   ];
-  activityVitals = ['steps', 'restingEnergy', 'activeEnergy', 'flightClimbed'];
+  activityVitals = ['steps', 'walkingRunningDistance'];
   async createUpdate(req: any): Promise<Record> {
     const body = req.body;
     const uid = new mongoose.Types.ObjectId(req?.user?._id);
