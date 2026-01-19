@@ -287,7 +287,7 @@ export const searchPipeline = (
   };
   if (!fields.length) return [];
   const sArr = fields.map((field) => ({
-    [field]: { $regex: getsf(field), $options: 'i' },
+    [field]: { $regex: new RegExp(getsf(field), 'i') },
   }));
   const pipeline: any[] = [
     {

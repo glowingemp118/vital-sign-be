@@ -19,8 +19,6 @@ import { UserType } from '../user/dto/user.dto';
 import { Doctor, DoctorDocument } from '../user/schemas/doctor.schema';
 import { processObject } from '../utils/encrptdecrpt';
 import { addDr } from '../utils/appUtils';
-import { pipeline } from 'stream';
-
 @Injectable()
 export class AdminService {
   constructor(

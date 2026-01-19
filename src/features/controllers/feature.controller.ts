@@ -21,7 +21,6 @@ export class FeatureController {
   ) {}
 
   @Get('/doctor')
-  @Access(UserType.User)
   async getDoctors(
     @Request() req, // User data from JWT or session
   ) {
@@ -29,7 +28,6 @@ export class FeatureController {
   }
 
   @Get('/doctor/:id')
-  @Access(UserType.User)
   async getDrbyId(
     @Request() req, // User data from JWT or session
   ) {
@@ -37,7 +35,6 @@ export class FeatureController {
   }
 
   @Get('/doctor/:id/reviews')
-  @Access(UserType.User)
   async drReviews(
     @Request() req, // User data from JWT or session
   ) {
