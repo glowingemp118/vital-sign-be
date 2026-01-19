@@ -219,12 +219,13 @@ export class AdminService {
     country?: string;
     gender?: string;
     phone?: string;
-    specialty: string;
+    specialties: string;
     experience: string;
     about?: string;
+    image?: string;
   }) {
-    const { email, password, name, phone, country, gender } = body;
-
+    let { email, password, name, phone, country, gender, image } = body;
+    email = email.toLowerCase().trim();
     // Check if email already exists
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
@@ -239,10 +240,13 @@ export class AdminService {
       password: hashedPassword,
       user_type: UserType.Doctor,
       is_verified: true,
+      email,
       name,
       phone,
       country,
       gender,
+      image,
+      roles: [UserType.Doctor],
       // ...encryted_obj,
       // hashes: { ...hash_obj },
     });

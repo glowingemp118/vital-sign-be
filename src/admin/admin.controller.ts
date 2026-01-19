@@ -163,4 +163,25 @@ export class AdminController {
   async deleteSpecialty(@Param('id') id: string) {
     return this.adminService.deleteSpecialty(id);
   }
+
+  // Doctor Endpoints
+  @Post('doctor')
+  @Access(UserType.Admin)
+  async addDoctor(
+    @Body()
+    body: {
+      name: string;
+      email: string;
+      password: string;
+      country?: string;
+      gender?: string;
+      phone?: string;
+      specialties: string;
+      experience: string;
+      about?: string;
+      image?: string;
+    },
+  ) {
+    return this.adminService.addDoctor(body);
+  }
 }
