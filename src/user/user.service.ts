@@ -38,18 +38,8 @@ export class UserService {
   // Create user and save it to the database
   async createUser(dto: CreateUserDto): Promise<any> {
     try {
-      let {
-        name,
-        email,
-        phone,
-        password,
-        user_type,
-        timezone,
-        image,
-        device_id,
-        device_type,
-      } = dto;
-      email = email.toLowerCase().trim();
+      let { name, email, phone, password, user_type } = dto;
+      email = email ? email.toLowerCase().trim() : ''; // Ensure email is defined
       if (user_type === UserType.Doctor) {
         validateParams(this.doctorModel.schema, dto, {
           requiredFields: ['specialties', 'experience'],
@@ -76,6 +66,7 @@ export class UserService {
       const hash_obj = processObject({ name, email, phone }, 'hash');
       const user = new this.userModel({
         ...dto,
+        email,
         password: password,
         otp: this.generateOtp(),
         roles: [user_type],
@@ -105,10 +96,12 @@ export class UserService {
   // Find a user by email
   async findUserByEmail(email: string): Promise<UserDocument | null> {
     email = email.toLowerCase().trim();
+    console.log(email);
     const hash_email = processValue(email, 'hash');
-    return this.userModel.findOne({
+    const user = await this.userModel.findOne({
       $or: [{ 'hashes.email': hash_email }, { email: email }],
     });
+    return user || null;
   }
 
   // Sign in a user and return a JWT token
