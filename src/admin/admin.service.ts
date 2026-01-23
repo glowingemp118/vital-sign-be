@@ -18,7 +18,7 @@ import { finalRes, paginationPipeline } from '../utils/dbUtils';
 import { UserType } from '../user/dto/user.dto';
 import { Doctor, DoctorDocument } from '../user/schemas/doctor.schema';
 import { processObject } from '../utils/encrptdecrpt';
-import { addDr } from '../utils/appUtils';
+import { addDr, modifiedUser } from '../utils/appUtils';
 @Injectable()
 export class AdminService {
   constructor(
@@ -64,7 +64,7 @@ export class AdminService {
     }
     const token_res = generateToken(user);
     return {
-      user,
+      user: modifiedUser(user),
       token_res,
     };
   }

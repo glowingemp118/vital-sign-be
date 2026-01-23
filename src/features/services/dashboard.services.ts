@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose'; // Assuming you have a Doctor model
-import * as moment from 'moment-timezone'; // For handling timezones
+import moment from 'moment'; // For handling timezones
 import { Appointment } from '../schemas/appointments.schema';
 import { Doctor } from '../../user/schemas/doctor.schema';
 import { validateParams } from '../../utils/validations';

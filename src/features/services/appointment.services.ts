@@ -202,7 +202,7 @@ export class AppointmentsService {
       } else if (user_type == UserType.Doctor) {
         obj.doctor = new mongoose.Types.ObjectId(_id);
       }
-      if (status && status !== ' all') {
+      if (status && status !== 'all') {
         obj.status = status;
       }
       const pipeline: any[] = [{ $match: obj }]; // Match the filter

@@ -99,8 +99,6 @@ export class RecordService {
       sort = 'desc',
     } = query || {};
     const uid = query?.uid || req?.user?._id;
-    console.log(uid);
-
     const isHome = home === 'true';
     const isActivity = activity === 'true';
     const timeFilter = time || '7days';
@@ -160,8 +158,6 @@ export class RecordService {
         value: rec.value ? processValue(rec.value, 'decrypt') : rec.value,
       };
     });
-    console.log(result[0], result?.length);
-
     dvitals.forEach((vital) => {
       if (!result.some((r) => r?.vital.key === vital?.key)) {
         result.push({

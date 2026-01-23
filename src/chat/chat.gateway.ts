@@ -1,67 +1,81 @@
 import {
-  ConnectedSocket,
-  MessageBody,
-  SubscribeMessage,
   WebSocketGateway,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { ChatService } from './chat.service';
-import { ReadDto, SendMessageDto } from './dto/chat-dto';
+import { Types } from 'mongoose';
+import { SocketService } from './socket.services';
 
-@WebSocketGateway({ cors: true })
-export class ChatGateway {
-  @WebSocketServer()
-  server: Server;
-
-  constructor(private readonly chat: ChatService) {}
-
-  room(id: string) {
-    return `conversation:${id}`;
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+})
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  constructor(private readonly socketService: SocketService) {}
+  @WebSocketServer() server: Server;
+  afterInit() {
+    // 👇 PASS IT TO SERVICE
+    this.socketService.setServer(this.server);
   }
+  // Method for handling socket connection
+  async handleConnection(socket: Socket) {
+    const { subjectId, objectId, type } = socket.handshake.query;
 
-  @SubscribeMessage('join')
-  join(@MessageBody() { conversationId }, @ConnectedSocket() socket: Socket) {
-    socket.join(this.room(conversationId));
-  }
+    // Directly access and ensure subjectId and objectId are treated as strings
+    const subjectIdString = Array.isArray(subjectId) ? subjectId[0] : subjectId;
+    const objectIdString = Array.isArray(objectId) ? objectId[0] : objectId;
 
-  @SubscribeMessage('send')
-  async send(
-    @MessageBody() dto: SendMessageDto,
-    @ConnectedSocket() socket: Socket,
-  ) {
-    const senderId = socket.handshake.auth.userId;
+    if (
+      !subjectIdString ||
+      !objectIdString ||
+      !Types.ObjectId.isValid(subjectIdString) ||
+      !Types.ObjectId.isValid(objectIdString)
+    ) {
+      const errorMessage =
+        'subjectId and objectId must be provided in query parameters and must be valid ObjectId.';
+      socket.emit('error', { message: errorMessage });
+      return;
+    }
 
-    const message = await this.chat.sendMessage(senderId, dto);
+    // Determine connection type
+    const connectionType = type === 'group' ? 'group' : 'direct';
+    console.log(`Connection type determined: ${connectionType}`);
 
-    this.server.to(this.room(dto.conversationId)).emit('message:new', message);
-
-    return message;
-  }
-
-  @SubscribeMessage('delivered')
-  async delivered(
-    @MessageBody() { messageId },
-    @ConnectedSocket() socket: Socket,
-  ) {
-    const userId = socket.handshake.auth.userId;
-
-    const msg = await this.chat.markDelivered(messageId, userId);
-
-    if (msg) {
-      this.server.to(this.room(msg.conversationId)).emit('message:status', msg);
+    // Create or update connection
+    try {
+      const connection = await this.socketService.createOrUpdateConnection({
+        subjectId: subjectIdString,
+        objectId: objectIdString,
+        socketId: socket.id,
+        type: connectionType,
+      });
+      console.log(`Socket connection created or updated`);
+    } catch (error) {
+      console.error(`Error creating/updating socket connection:`, error);
     }
   }
 
-  @SubscribeMessage('read')
-  async read(@MessageBody() dto: ReadDto, @ConnectedSocket() socket: Socket) {
-    const userId = socket.handshake.auth.userId;
+  // Method for handling socket disconnection
+  async handleDisconnect(socket: Socket) {
+    const { subjectId, objectId, type } = socket.handshake.query;
 
-    await this.chat.markRead(dto.conversationId, userId);
+    // Directly access and ensure subjectId and objectId are treated as strings
+    const subjectIdString = Array.isArray(subjectId) ? subjectId[0] : subjectId;
+    const objectIdString = Array.isArray(objectId) ? objectId[0] : objectId;
 
-    this.server.to(this.room(dto.conversationId)).emit('conversation:read', {
-      conversationId: dto.conversationId,
-      userId,
-    });
+    const connectionType = type === 'group' ? 'group' : 'direct';
+    console.log(`User ${subjectIdString} disconnected.`);
+
+    await this.socketService.deleteConnectionByUserId(
+      subjectIdString,
+      connectionType === 'group' ? objectIdString : null,
+      connectionType,
+    );
+    console.log(
+      `User ${subjectIdString} removed from ${connectionType} active connections.`,
+    );
   }
 }

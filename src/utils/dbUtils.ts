@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
 import { processValue } from './encrptdecrpt';
-
+import { config } from 'dotenv';
+config();
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
 
 export const countStatus = () => {
@@ -297,4 +297,123 @@ export const searchPipeline = (
     },
   ];
   return pipeline;
+};
+
+export const chatPipeline = (userId: any, keyword?: string) => {
+  return [
+    {
+      $match: {
+        $or: [{ subjectId: userId }, { objectId: userId }],
+      },
+    },
+
+    // 2. Identify the other user
+    {
+      $addFields: {
+        otherUserId: {
+          $cond: [{ $eq: ['$subjectId', userId] }, '$objectId', '$subjectId'],
+        },
+
+        // 3. Is this message unread for me?
+        isUnread: {
+          $and: [
+            { $eq: ['$objectId', userId] }, // message sent to me
+            {
+              $not: {
+                $in: [userId, '$readBy'],
+              },
+            },
+          ],
+        },
+      },
+    },
+
+    // 4. Sort newest first
+    { $sort: { createdAt: -1 } },
+
+    // 5. Group by chat
+    {
+      $group: {
+        _id: '$otherUserId',
+        message: { $first: '$$ROOT' },
+        unreadCount: {
+          $sum: {
+            $cond: ['$isUnread', 1, 0],
+          },
+        },
+      },
+    },
+
+    // 6. Populate other user
+    {
+      $lookup: {
+        from: 'users',
+        let: { otherId: '$_id' }, // string
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$_id', { $toObjectId: '$$otherId' }] },
+                  ...(keyword
+                    ? [
+                        {
+                          $or: [
+                            {
+                              $regexMatch: {
+                                input: '$name',
+                                regex: keyword,
+                                options: 'i',
+                              },
+                            },
+                            {
+                              $regexMatch: {
+                                input: '$hashes.name',
+                                regex: keyword,
+                                options: 'i',
+                              },
+                            },
+                          ],
+                        },
+                      ]
+                    : []),
+                ],
+              },
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              email: 1,
+              image: { $concat: [IB_URL, '$image'] },
+              is_verified: 1,
+              status: 1,
+              user_type: 1,
+            },
+          },
+        ],
+        as: 'otherUser',
+      },
+    },
+    { $unwind: '$otherUser' },
+
+    // 7. Final response
+    {
+      $project: {
+        _id: 0,
+        otherUser: 1,
+        message: {
+          _id: '$message._id',
+          content: '$message.content',
+          messageType: '$message.messageType',
+          status: '$message.status',
+          createdAt: '$message.createdAt',
+        },
+        unreadCount: 1,
+      },
+    },
+
+    // 8. Sort chats by latest message
+    { $sort: { 'message.createdAt': -1 } },
+  ];
 };

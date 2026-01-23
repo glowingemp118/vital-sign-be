@@ -8,15 +8,23 @@ import {
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
+import {
+  SocketConnection,
+  SocketConnectionSchema,
+} from './schemas/socket.schema';
+import { SocketService } from './socket.services';
+import { User, UserSchema } from 'src/user/schemas/user.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
       { name: Message.name, schema: MessageSchema },
       { name: Conversation.name, schema: ConversationSchema },
+      { name: SocketConnection.name, schema: SocketConnectionSchema },
     ]),
   ],
-  providers: [ChatGateway, ChatService],
+  providers: [ChatGateway, ChatService, SocketService],
   controllers: [ChatController],
 })
 export class ChatModule {}

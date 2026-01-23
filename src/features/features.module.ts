@@ -12,6 +12,13 @@ import { FeatureController } from './controllers/feature.controller';
 import { FeatureService } from './services/feature.services';
 import { CloudinaryService } from '../utils/cloudinary';
 import { Vital, VitalSchema } from './schemas/vital.schema';
+import { NotificationController } from './controllers/notification.controller';
+import { NotificationService } from './services/notification.service';
+import { Device, DeviceSchema } from 'src/user/schemas/devices.schema';
+import {
+  Notification,
+  NotificationSchema,
+} from './schemas/notification.schema';
 
 @Module({
   imports: [
@@ -21,14 +28,22 @@ import { Vital, VitalSchema } from './schemas/vital.schema';
       { name: Appointment.name, schema: AppointmentSchema },
       { name: Review.name, schema: ReviewSchema },
       { name: Vital.name, schema: VitalSchema },
+      { name: Device.name, schema: DeviceSchema },
+      { name: Notification.name, schema: NotificationSchema },
     ]),
   ],
-  controllers: [FeatureController, RecordController, AppointmentsController],
+  controllers: [
+    FeatureController,
+    RecordController,
+    AppointmentsController,
+    NotificationController,
+  ],
   providers: [
     FeatureService,
     RecordService,
     AppointmentsService,
     CloudinaryService,
+    NotificationService,
   ],
 })
 export class FeaturesModule {}

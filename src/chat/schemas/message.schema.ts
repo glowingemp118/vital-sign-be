@@ -1,24 +1,35 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Message {
   @Prop({ index: true })
-  conversationId: string;
+  @Prop({ type: String, enum: ['direct', 'group'], default: 'direct' })
+  type: 'direct' | 'group';
 
-  @Prop({ index: true })
-  senderId: string;
+  @Prop({ type: Types.ObjectId, required: true, ref: 'User' })
+  subjectId: Types.ObjectId; // Reference to the appointment
 
-  @Prop({ index: true })
-  receiverId: string;
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  objectId: Types.ObjectId;
+
+  @Prop({ type: String, enum: ['text', 'audio', 'file'], required: true })
+  messageType: 'text' | 'audio' | 'file';
+
+  @Prop({ required: false })
+  mediaUrl: string;
+
+  @Prop([{ type: Types.ObjectId, ref: 'User' }])
+  readBy: Types.ObjectId[];
 
   @Prop()
   content: string;
 
   @Prop({
-    enum: ['SENT', 'DELIVERED', 'READ'],
+    enum: ['SENT', 'DELIVERED'],
     default: 'SENT',
   })
-  status: 'SENT' | 'DELIVERED' | 'READ';
+  status: 'SENT' | 'DELIVERED';
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

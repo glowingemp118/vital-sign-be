@@ -96,7 +96,6 @@ export class UserService {
   // Find a user by email
   async findUserByEmail(email: string): Promise<UserDocument | null> {
     email = email.toLowerCase().trim();
-    console.log(email);
     const hash_email = processValue(email, 'hash');
     const user = await this.userModel.findOne({
       $or: [{ 'hashes.email': hash_email }, { email: email }],
