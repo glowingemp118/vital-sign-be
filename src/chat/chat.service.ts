@@ -193,7 +193,7 @@ export class ChatService {
         btasks();
       } else {
         const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
-        this.notificationService.sendNotification({
+        await this.notificationService.sendNotification({
           userId: objectId,
           title: msg.title,
           message: content?.substring(0, 100),

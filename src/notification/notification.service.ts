@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import admin from '../config/firebase';
 import { InjectModel } from '@nestjs/mongoose';
 import { Device } from 'src/user/schemas/devices.schema';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { Notification } from './notification.schema';
 import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 
@@ -21,8 +21,14 @@ export class NotificationService {
   }
 
   async getAllNotifications(req: any) {
-    const { pageno, limit, search, filter } = req.query || {};
-    let obj: any = { ...filter };
+    const { _id } = req.user;
+    const { pageno, limit, search, filter, user } = req.query || {};
+
+    let obj: any = {
+      ...filter,
+      user: user || _id,
+      isDeleted: false,
+    };
     try {
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
@@ -49,7 +55,15 @@ export class NotificationService {
   async sendNotification(body: any) {
     try {
       const { userId, title, message, type, object } = body;
-      // Step 1: Find user devices
+      const notification = new this.notificationModel({
+        user: userId,
+        title,
+        message,
+        type,
+        object: object,
+      });
+
+      await notification.save(); // Save the notification to the DB
       const userDevices = await this.deviceModel
         .findOne({ user: userId })
         .exec();
@@ -66,18 +80,6 @@ export class NotificationService {
       if (validTokens.length === 0) {
         throw new Error('No valid devices found for user');
       }
-
-      // Step 3: Send multicast message
-      const notification = new this.notificationModel({
-        user: userId,
-        title,
-        message,
-        type,
-        object: object,
-      });
-
-      await notification.save(); // Save the notification to the DB
-
       // Step 4: Send multicast message using Firebase Admin
       const notifyPayload = {
         notification: {

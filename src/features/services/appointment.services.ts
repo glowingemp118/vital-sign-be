@@ -204,7 +204,7 @@ export class AppointmentsService {
         try {
           const msg = `Your appointment ${appointmentId} with Dr. ${doctorExists.user?.name} on ${date} from ${startTime} to ${endTime} has been booked successfully.`;
           const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
-          this.notificationService.sendNotification({
+          await this.notificationService.sendNotification({
             userId: doctorExists.user?._id,
             title: notify.title,
             message: msg,
@@ -313,7 +313,7 @@ export class AppointmentsService {
             user_type == UserType.User ? existingAppointment.doctor : _id;
           const msg = `Your appointment ${appointmentId} on ${date} from ${startTime} to ${endTime} has been ${status} successfully.`;
           const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
-          this.notificationService.sendNotification({
+          await this.notificationService.sendNotification({
             userId: sendto,
             title: notify.title,
             message: msg,

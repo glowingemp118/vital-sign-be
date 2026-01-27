@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, Param } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Req, Param } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 
 @Controller('notification')
@@ -10,17 +10,17 @@ export class NotificationController {
     return this.service.send(body.token, body.title, body.body);
   }
 
-  @Post('getall')
+  @Get('/')
   getall(@Req() req: any) {
     return this.service.getAllNotifications(req);
   }
 
-  @Post('markread/:notificationId')
+  @Put('read/:notificationId')
   markread(@Param('notificationId') notificationId: any) {
     return this.service.markAsRead(notificationId);
   }
 
-  @Post('readall')
+  @Put('readall')
   readall(@Req() req: any) {
     const userId = req.user._id;
     return this.service.markAllAsRead(userId);
