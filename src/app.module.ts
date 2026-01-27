@@ -10,6 +10,7 @@ import { AdminModule } from './admin/admin.module';
 import { FeaturesModule } from './features/features.module';
 import { AccessGuard } from './guards/access.guard';
 import { ChatModule } from './chat/chat.module';
+import { NotificationModule } from './notification/notfication.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -28,6 +29,7 @@ import { ChatModule } from './chat/chat.module';
     UserModule,
     FeaturesModule,
     ChatModule,
+    NotificationModule,
   ],
   controllers: [],
   providers: [

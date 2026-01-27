@@ -12,16 +12,18 @@ import { FeatureController } from './controllers/feature.controller';
 import { FeatureService } from './services/feature.services';
 import { CloudinaryService } from '../utils/cloudinary';
 import { Vital, VitalSchema } from './schemas/vital.schema';
-import { NotificationController } from './controllers/notification.controller';
-import { NotificationService } from './services/notification.service';
+import { NotificationController } from '../notification/notification.controller';
+import { NotificationService } from '../notification/notification.service';
 import { Device, DeviceSchema } from 'src/user/schemas/devices.schema';
 import {
   Notification,
   NotificationSchema,
-} from './schemas/notification.schema';
+} from '../notification/notification.schema';
+import { NotificationModule } from 'src/notification/notfication.module';
 
 @Module({
   imports: [
+    NotificationModule,
     MongooseModule.forFeature([
       { name: Record.name, schema: RecordSchema },
       { name: Doctor.name, schema: DoctorSchema },
@@ -45,5 +47,6 @@ import {
     CloudinaryService,
     NotificationService,
   ],
+  exports: [NotificationService],
 })
 export class FeaturesModule {}

@@ -15,6 +15,11 @@ import {
 } from '../../utils/dbUtils';
 import { UserType } from '../../user/dto/user.dto';
 import { Review } from '../schemas/reviews.schema';
+import { NotificationService } from 'src/notification/notification.service';
+import {
+  NOTIFICATION_CONFIG,
+  NOTIFICATION_TYPE,
+} from 'src/constants/constants';
 
 @Injectable()
 export class AppointmentsService {
@@ -22,6 +27,7 @@ export class AppointmentsService {
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(Review.name) private reviewModel: Model<Review>,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // Function to get available slots for a specific doctor, date, and dynamic duration
@@ -159,6 +165,13 @@ export class AppointmentsService {
         allowExtraFields: true,
       });
 
+      const doctorExists: any = await this.doctorModel
+        .findOne({ user: new mongoose.Types.ObjectId(doctor) })
+        .populate({ path: 'user', select: 'name email' })
+        .exec();
+      if (!doctorExists) {
+        throw new Error('Doctor not found');
+      }
       const slots = await this.getAvailableSlots(user, {
         date,
         doctor,
@@ -186,7 +199,27 @@ export class AppointmentsService {
       });
 
       // Save the appointment to the database
-      return newAppointment.save();
+      newAppointment.save();
+      const sndNotification = async () => {
+        try {
+          const msg = `Your appointment ${appointmentId} with Dr. ${doctorExists.user?.name} on ${date} from ${startTime} to ${endTime} has been booked successfully.`;
+          const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
+          this.notificationService.sendNotification({
+            userId: doctorExists.user?._id,
+            title: notify.title,
+            message: msg,
+            type: notify.type,
+            object: { appointmentId: newAppointment._id },
+          });
+        } catch (error) {
+          console.error(
+            'Error in background task for sending appointment notification:',
+            error,
+          );
+        }
+      };
+      sndNotification();
+      return newAppointment;
     } catch (error) {
       throw new BadRequestException(error?.message);
     }
@@ -271,7 +304,31 @@ export class AppointmentsService {
       existingAppointment.status = status;
 
       // Save the updated appointment document
-      return existingAppointment.save();
+      existingAppointment.save();
+      const sndNotification = async () => {
+        try {
+          const { appointmentId, date, startTime, endTime } =
+            existingAppointment || {};
+          const sendto =
+            user_type == UserType.User ? existingAppointment.doctor : _id;
+          const msg = `Your appointment ${appointmentId} on ${date} from ${startTime} to ${endTime} has been ${status} successfully.`;
+          const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
+          this.notificationService.sendNotification({
+            userId: sendto,
+            title: notify.title,
+            message: msg,
+            type: notify.type,
+            object: { appointmentId: existingAppointment._id },
+          });
+        } catch (error) {
+          console.error(
+            'Error in background task for sending appointment notification:',
+            error,
+          );
+        }
+      };
+      sndNotification();
+      return existingAppointment;
     } catch (error) {
       throw new BadRequestException(error?.message);
     }

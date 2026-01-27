@@ -5,10 +5,9 @@ export type AppointmentDocument = Appointment & Document;
 
 @Schema({ timestamps: true })
 export class Appointment {
-  @Prop({
-    type: String,
-  })
+  @Prop()
   appointmentId: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
 

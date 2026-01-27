@@ -9,7 +9,11 @@ import { SocketService } from './socket.services';
 import { chatPipeline, finalRes, paginationPipeline } from 'src/utils/dbUtils';
 import { processObject, processValue } from 'src/utils/encrptdecrpt';
 import { UserType } from 'src/user/dto/user.dto';
-import { NotificationService } from 'src/features/services/notification.service';
+import { NotificationService } from 'src/notification/notification.service';
+import {
+  NOTIFICATION_CONFIG,
+  NOTIFICATION_TYPE,
+} from 'src/constants/constants';
 
 @Injectable()
 export class ChatService {
@@ -19,7 +23,7 @@ export class ChatService {
     @InjectModel(SocketConnection.name)
     private socketConnectionModel: Model<SocketConnection>, // Inject SocketConnection model
     private readonly socketService: SocketService,
-    // private readonly notificationService: NotificationService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // Fetch chats (first message from each conversation with users list)
@@ -132,22 +136,23 @@ export class ChatService {
       return;
     }
 
-    const objectId = otherUserId; // Receiver ID
-
-    if (objectId == userId) {
-      throw new Error('Cannot send message to yourself');
-    }
-    const chatRoomId = (this.socketConnectionModel as any).generateChatRoomId(
-      userId,
-      objectId,
-    );
-    const rconnection = await this.socketConnectionModel.findOne({
-      subjectId: objectId,
-      chatRoomId,
-      type: 'direct',
-    });
-    const readBy = rconnection ? [userId, objectId] : [userId];
     try {
+      const objectId = otherUserId; // Receiver ID
+
+      if (objectId == userId) {
+        throw new Error('Cannot send message to yourself');
+      }
+      const chatRoomId = (this.socketConnectionModel as any).generateChatRoomId(
+        userId,
+        objectId,
+      );
+      const rconnection = await this.socketConnectionModel.findOne({
+        subjectId: objectId,
+        chatRoomId,
+        type: 'direct',
+      });
+      const readBy = rconnection ? [userId, objectId] : [userId];
+
       const message: any = await this.msgModel.create({
         subjectId: userId,
         objectId: objectId,
@@ -184,7 +189,18 @@ export class ChatService {
           console.error('Error in background task for sending message:', error);
         }
       };
-      rconnection && btasks();
+      if (rconnection) {
+        btasks();
+      } else {
+        const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
+        this.notificationService.sendNotification({
+          userId: objectId,
+          title: msg.title,
+          message: content?.substring(0, 100),
+          type: msg.type,
+          object: { messageId: message._id, objectId, subjectId: userId },
+        });
+      }
       return {
         message: 'Message sent successfully',
         data: { ...messageObject, content },

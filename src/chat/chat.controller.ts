@@ -32,7 +32,7 @@ export class ChatController {
   }
 
   // 🔹 Delete entire chat with a user
-  @Delete(':otherUserId/chat')
+  @Delete(':otherUserId')
   deleteChat(@Param('otherUserId') otherUserId: string, @Req() req) {
     return this.chatService.deleteChat(req.user, otherUserId);
   }

@@ -14,9 +14,13 @@ import {
 } from './schemas/socket.schema';
 import { SocketService } from './socket.services';
 import { User, UserSchema } from 'src/user/schemas/user.schema';
+import { NotificationService } from 'src/notification/notification.service';
+import { Device, DeviceSchema } from 'src/user/schemas/devices.schema';
+import { NotificationModule } from 'src/notification/notfication.module';
 
 @Module({
   imports: [
+    NotificationModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Message.name, schema: MessageSchema },

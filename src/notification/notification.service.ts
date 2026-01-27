@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import admin from '../../config/firebase';
+import admin from '../config/firebase';
 import { InjectModel } from '@nestjs/mongoose';
 import { Device } from 'src/user/schemas/devices.schema';
 import { Model } from 'mongoose';
-import { Notification } from '../schemas/notification.schema';
+import { Notification } from './notification.schema';
 import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 
 @Injectable()
