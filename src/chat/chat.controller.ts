@@ -40,12 +40,12 @@ export class ChatController {
   // 🔹 Delete a specific message
   @Delete('message/:messageId')
   deleteMessage(@Param('messageId') messageId: string, @Req() req) {
-    return this.chatService.deleteMessage(req.user, messageId);
+    return this.chatService.deleteMessage(req, messageId);
   }
 
   // 🔹 Mark all messages as read
   @Put('message/read/:otherUserId')
   markAllMessagesAsRead(@Param('otherUserId') otherUserId: string, @Req() req) {
-    return this.chatService.markAllMessagesAsRead(req.user, otherUserId);
+    return this.chatService.markAllMessagesAsRead(req, otherUserId);
   }
 }
