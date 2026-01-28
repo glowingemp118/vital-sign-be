@@ -27,10 +27,9 @@ export class NotificationService {
     let obj: any = {
       ...filter,
       user: user || _id,
-      isDeleted: false,
     };
     try {
-      const pipeline: any[] = [{ $match: obj }]; // Match the filter
+      const pipeline: any[] = [{ $match: obj }, { $sort: { createdAt: -1 } }]; // Match the filter
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.notificationModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
@@ -52,6 +51,18 @@ export class NotificationService {
       .exec();
   }
 
+  async deleteNotification(notificationId: string, userId: string) {
+    return this.notificationModel
+      .findOneAndDelete({
+        _id: new mongoose.Types.ObjectId(notificationId),
+        user: userId,
+      })
+      .exec();
+  }
+
+  async deleteAllNotifications(userId: string) {
+    return this.notificationModel.deleteMany({ user: userId }).exec();
+  }
   async sendNotification(body: any) {
     try {
       const { userId, title, message, type, object } = body;

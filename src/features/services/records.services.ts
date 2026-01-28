@@ -6,6 +6,7 @@ import { validateParams } from '../../utils/validations';
 import { finalRes, paginationPipeline, sort } from '../../utils/dbUtils';
 import { processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
+import { getVitalStatus } from 'src/utils/appUtils';
 // import * as moment from 'moment-timezone';
 // import moment from 'moment-timezone';
 @Injectable()
@@ -30,7 +31,7 @@ export class RecordService {
       allowExtraFields: true,
     });
 
-    let { recorded_at, vital, value, status } = body;
+    let { recorded_at, vital, value } = body;
 
     // Ensure correct types
     const user = uid;
@@ -40,6 +41,11 @@ export class RecordService {
     vital = new mongoose.Types.ObjectId(vital);
     value = processValue(String(value), 'encrypt');
     status = status || 'normal';
+
+    const vitalDoc = await this.vitalModel.findById(vital).exec();
+    if (!vitalDoc) {
+      throw new Error('Vital not found');
+    }
 
     // Check for existing record
     const existing = await this.recordModel
@@ -57,17 +63,19 @@ export class RecordService {
       // return await existing.save();
       return existing;
     }
-
+    const vstatus = getVitalStatus(vitalDoc.key as any, value);
     // Create new record
     const newRecord = new this.recordModel({
       user,
       recorded_at,
       vital,
       value,
-      status,
+      status: vstatus !== 'unknown' ? vstatus : 'normal',
     });
-
-    return newRecord.save();
+    await newRecord.save();
+    if (vstatus == 'critical') {
+    }
+    return newRecord;
   }
   async bulkCreateUpdate(req: any): Promise<any> {
     const bodyArray = Array.isArray(req.body) ? req.body : [req.body];

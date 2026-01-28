@@ -36,12 +36,6 @@ export class Notification {
   type: string;
 
   @Prop({
-    type: Boolean,
-    default: false,
-  })
-  isDeleted: boolean;
-
-  @Prop({
     type: Object,
   })
   object: any;

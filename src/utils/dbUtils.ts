@@ -381,6 +381,31 @@ export const chatPipeline = (userId: any, keyword?: string) => {
               },
             },
           },
+
+          {
+            $lookup: {
+              from: 'socketconnections',
+              let: {
+                otherUserId: { $toString: '$_id' },
+                userId: userId,
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ['$objectId', '$$userId'] },
+                        { $eq: ['$subjectId', '$$otherUserId'] },
+                      ],
+                    },
+                  },
+                },
+                { $limit: 1 },
+              ],
+              as: 'onlineStatus',
+            },
+          },
+
           {
             $project: {
               name: 1,
@@ -389,6 +414,9 @@ export const chatPipeline = (userId: any, keyword?: string) => {
               is_verified: 1,
               status: 1,
               user_type: 1,
+              isOnline: {
+                $gt: [{ $size: '$onlineStatus' }, 0],
+              },
             },
           },
         ],

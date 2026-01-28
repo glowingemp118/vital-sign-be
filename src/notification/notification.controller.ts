@@ -1,4 +1,13 @@
-import { Controller, Get, Put, Post, Body, Req, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Post,
+  Body,
+  Req,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import { NotificationService } from './notification.service';
 
 @Controller('notification')
@@ -24,5 +33,19 @@ export class NotificationController {
   readall(@Req() req: any) {
     const userId = req.user._id;
     return this.service.markAllAsRead(userId);
+  }
+
+  @Delete('/:notificationId')
+  deletenotification(
+    @Param('notificationId') notificationId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user._id;
+    return this.service.deleteNotification(notificationId, userId);
+  }
+  @Delete('/all')
+  deleteall(@Req() req: any) {
+    const userId = req.user._id;
+    return this.service.deleteAllNotifications(userId);
   }
 }

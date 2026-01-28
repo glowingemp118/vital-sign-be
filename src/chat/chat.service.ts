@@ -148,7 +148,7 @@ export class ChatService {
       );
       const rconnection = await this.socketConnectionModel.findOne({
         subjectId: objectId,
-        chatRoomId,
+        objectId: userId,
         type: 'direct',
       });
       const readBy = rconnection ? [userId, objectId] : [userId];
