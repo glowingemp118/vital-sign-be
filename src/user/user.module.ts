@@ -11,6 +11,10 @@ import {
   Speciality,
   SpecialitySchema,
 } from '../admin/schemas/speciality.schema';
+import {
+  Appointment,
+  AppointmentSchema,
+} from 'src/features/schemas/appointments.schema';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -18,6 +22,7 @@ import {
       { name: Device.name, schema: DeviceSchema },
       { name: Doctor.name, schema: DoctorSchema },
       { name: Speciality.name, schema: SpecialitySchema },
+      { name: Appointment.name, schema: AppointmentSchema },
     ]),
     JwtModule.register({
       global: true,

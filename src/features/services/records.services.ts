@@ -3,17 +3,27 @@ import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
 import { Record } from '../schemas/records.schema';
 import { validateParams } from '../../utils/validations';
-import { finalRes, paginationPipeline, sort } from '../../utils/dbUtils';
-import { processValue } from '../../utils/encrptdecrpt';
+import {
+  finalRes,
+  paginationPipeline,
+  recordsPipeline,
+  sort,
+  statusCounts,
+} from '../../utils/dbUtils';
+import { processObject, processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
 import { getVitalStatus } from 'src/utils/appUtils';
-// import * as moment from 'moment-timezone';
-// import moment from 'moment-timezone';
+import { User } from 'src/user/schemas/user.schema';
+import moment from 'moment-timezone';
+import { Appointment } from '../schemas/appointments.schema';
+import { UserType } from 'src/user/dto/user.dto';
 @Injectable()
 export class RecordService {
   constructor(
-    @InjectModel('Record') private recordModel: Model<Record>,
-    @InjectModel('Vital') private vitalModel: Model<Vital>,
+    @InjectModel(Record.name) private recordModel: Model<Record>,
+    @InjectModel(Vital.name) private vitalModel: Model<Vital>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
   ) {}
   homeVitals = [
     'bloodPressure',
@@ -23,65 +33,67 @@ export class RecordService {
   ];
   activityVitals = ['steps', 'walkingRunningDistance'];
   async createUpdate(req: any): Promise<Record> {
-    const body = req.body;
-    const uid = new mongoose.Types.ObjectId(req?.user?._id);
+    try {
+      const body = req.body;
+      const uid = new mongoose.Types.ObjectId(req?.user?._id);
 
-    validateParams(this.recordModel.schema, body, {
-      requiredFields: ['recorded_at', 'vital', 'value'],
-      allowExtraFields: true,
-    });
+      validateParams(this.recordModel.schema, body, {
+        requiredFields: ['recorded_at', 'vital', 'value'],
+        allowExtraFields: true,
+      });
 
-    let { recorded_at, vital, value } = body;
+      let { recorded_at, vital, value } = body;
 
-    // Ensure correct types
-    const user = uid;
-    // Use moment-timezone for date parsing
-    const timezone = req?.user?.timzone || 'UTC';
-    // recorded_at = moment.tz(recorded_at, timezone).toDate();
-    vital = new mongoose.Types.ObjectId(vital);
-    value = processValue(String(value), 'encrypt');
-    status = status || 'normal';
+      // Ensure correct types
+      const user = uid;
+      // Use moment-timezone for date parsing
+      const timezone = req?.user?.timzone || 'UTC';
+      // recorded_at = moment.tz(recorded_at, timezone).toDate();
+      vital = new mongoose.Types.ObjectId(vital);
+      value = processValue(String(value), 'encrypt');
 
-    const vitalDoc = await this.vitalModel.findById(vital).exec();
-    if (!vitalDoc) {
-      throw new Error('Vital not found');
-    }
-
-    // Check for existing record
-    const existing = await this.recordModel
-      .findOne({
+      const vitalDoc = await this.vitalModel
+        .findById(new mongoose.Types.ObjectId(vital))
+        .exec();
+      if (!vitalDoc) {
+        throw new Error('Vital not found');
+      }
+      // Check for existing record
+      const existing = await this.recordModel
+        .findOne({
+          recorded_at,
+          vital,
+          user,
+        })
+        .exec();
+      if (existing) {
+        // Update existing record
+        // existing.value = value;
+        // existing.status = status;
+        // return await existing.save();
+        return existing;
+      }
+      const vstatus = getVitalStatus(vitalDoc.key as any, value);
+      // Create new record
+      const newRecord = new this.recordModel({
+        user,
         recorded_at,
         vital,
-        user,
-      })
-      .exec();
-
-    if (existing) {
-      // Update existing record
-      // existing.value = value;
-      // existing.status = status;
-      // return await existing.save();
-      return existing;
+        value,
+        status: vstatus !== 'unknown' ? vstatus : 'normal',
+      });
+      await newRecord.save();
+      if (vstatus == 'critical') {
+      }
+      return newRecord;
+    } catch (error) {
+      throw new Error(error?.message);
     }
-    const vstatus = getVitalStatus(vitalDoc.key as any, value);
-    // Create new record
-    const newRecord = new this.recordModel({
-      user,
-      recorded_at,
-      vital,
-      value,
-      status: vstatus !== 'unknown' ? vstatus : 'normal',
-    });
-    await newRecord.save();
-    if (vstatus == 'critical') {
-    }
-    return newRecord;
   }
   async bulkCreateUpdate(req: any): Promise<any> {
     const bodyArray = Array.isArray(req.body) ? req.body : [req.body];
     const user = req.user;
     const results: Record[] = [];
-
     const promises = bodyArray.map((body: any) =>
       this.createUpdate({ body, user }),
     );
@@ -106,7 +118,7 @@ export class RecordService {
       filter,
       sort = 'desc',
     } = query || {};
-    const uid = query?.uid || req?.user?._id;
+    const uid = query?.uid || user?._id;
     const isHome = home === 'true';
     const isActivity = activity === 'true';
     const timeFilter = time || '7days';
@@ -118,7 +130,7 @@ export class RecordService {
     } else if (isActivity) {
       vitals = this.activityVitals;
     } else if (query.vital) {
-      vitals = Array.isArray(query.vitals) ? query.vital : [query.vital];
+      vitals = Array.isArray(query.vitals) ? query.vitals : [query.vital];
     }
     const dvitals = await this.vitalModel
       .find({ key: { $in: vitals } })
@@ -134,7 +146,7 @@ export class RecordService {
       startDate = new Date(from);
       now = new Date(to);
     } else if (timeFilter === '24hrs') {
-      startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      startDate = new Date(Date.now());
     } else if (timeFilter === '7days') {
       startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     } else if (timeFilter === '30days') {
@@ -222,7 +234,7 @@ export class RecordService {
       }));
   }
 
-  async homeRecords(req: any) {
+  async homeRecords(req: any): Promise<any> {
     const user = req.user;
     const { time } = req.query || {};
     // Get latest home vitals, sorted by homeVitals order
@@ -249,8 +261,23 @@ export class RecordService {
       user,
     });
     const bpGraph = this.formatGraphData(bpRes);
+    let userData: any = null;
+    if (req.fetchUser) {
+      const duser = await this.userModel
+        .findById(new mongoose.Types.ObjectId(user._id))
+        .select('email name image country phone')
+        .lean();
+      if (duser) {
+        duser.image = duser.image
+          ? `${process.env.IB_URL}${duser.image}`
+          : 'noimage.png';
+
+        userData = processObject(duser, 'decrypt');
+      }
+    }
 
     return {
+      ...(userData && { user: userData }),
       records: homeRes,
       activity: activityRes,
       trendGraph: bpGraph || [],
@@ -332,10 +359,6 @@ export class RecordService {
     }
   }
 
-  async findOne(id: string): Promise<Record> {
-    return;
-  }
-
   async update(id: string, updateRecordDto: any): Promise<Record> {
     return this.recordModel
       .findByIdAndUpdate(id, { $set: updateRecordDto }, { new: true })
@@ -346,5 +369,50 @@ export class RecordService {
     const record = await this.recordModel.findById(id).exec();
     await this.recordModel.deleteOne({ _id: id });
     return record;
+  }
+
+  async getRecords(req: any): Promise<any> {
+    try {
+      const { pageno, limit, search, filter = {}, status } = req.query || {};
+      let obj: any = {
+        ...filter,
+      };
+
+      if (req?.user?.user_type === UserType.Doctor) {
+        const userIds = await this.appointmentModel.distinct('user', {
+          doctor: new mongoose.Types.ObjectId(req?.user?._id),
+          status: { $ne: 'cancelled' },
+        });
+        if (userIds.length > 0) {
+          obj.user = { $in: userIds };
+        }
+      }
+      if (status) {
+        obj.status = status;
+      }
+      const pipeline: any[] = [{ $match: obj }, ...recordsPipeline(search)];
+      if (pageno && limit) {
+        pipeline.push(paginationPipeline({ pageno, limit }));
+      }
+      const data = await this.recordModel.aggregate(pipeline);
+      const result = finalRes({ pageno, limit, data });
+      const [count] = await this.recordModel.aggregate(
+        statusCounts(['normal', 'high', 'low', 'critical']),
+      );
+      const fres = {
+        meta: { ...result.meta, ...count },
+        data: result?.data?.map((r: any) => {
+          delete r?.user?.hashes;
+          return {
+            ...r,
+            user: processObject(r.user, 'decrypt'),
+            value: processValue(r.value, 'decrypt'),
+          };
+        }),
+      };
+      return fres;
+    } catch (err) {
+      throw new Error(err?.message);
+    }
   }
 }

@@ -1,47 +1,13 @@
+import e from 'express';
 import { processValue } from './encrptdecrpt';
 import { config } from 'dotenv';
 config();
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
 
-export const countStatus = () => {
-  return [
-    {
-      $match: { role: { $ne: 'admin' } }, // Exclude admin users from the count
-    },
-    {
-      $group: {
-        _id: '$status',
-        active: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'active'] }, 1, 0],
-          },
-        },
-        inactive: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'inactive'] }, 1, 0],
-          },
-        },
-        blocked: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'blocked'] }, 1, 0],
-          },
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        active: 1,
-        inactive: 1,
-        blocked: 1,
-      },
-    },
-  ];
-};
-
 export const paginationPipeline = ({
   pageno = 1,
   limit = parseInt(process.env.ITEMPERPAGE),
+  additional = {},
 }) => {
   const skip = (Number(pageno) - 1) * Number(limit);
   return {
@@ -51,6 +17,7 @@ export const paginationPipeline = ({
           $group: {
             _id: null,
             total: { $sum: 1 },
+            ...additional,
           },
         },
       ],
@@ -71,22 +38,11 @@ export const sort = (format: number = -1) => {
 };
 
 export const finalRes = ({ pageno = 1, limit, data = [] }) => {
-  if (!data || !data.length) {
-    return {
-      meta: {
-        total_pages: 0,
-        total_length: 0,
-        pageno: Number(pageno),
-        limit: 0,
-      },
-      data: [],
-    };
-  }
   const hasPagination = Number.isFinite(+limit);
+  const metaSource = hasPagination ? data?.[0]?.metadata?.[0] ?? {} : {};
 
-  const total = hasPagination
-    ? data?.[0]?.metadata?.[0]?.total ?? 0
-    : data.length;
+  const total = hasPagination ? metaSource.total ?? 0 : data.length;
+  const { total: _, _id, ...extraMeta } = metaSource;
 
   return {
     meta: {
@@ -94,6 +50,7 @@ export const finalRes = ({ pageno = 1, limit, data = [] }) => {
       total_length: total,
       pageno: Number(pageno),
       limit: hasPagination ? Number(limit) : 0,
+      ...extraMeta,
     },
     data: hasPagination ? data?.[0]?.data ?? [] : data,
   };
@@ -113,6 +70,8 @@ export const userPipeline = () => {
               name: 1,
               email: 1,
               phone: 1,
+              status: 1,
+              gender: 1,
               hashes: 1,
               image: {
                 $concat: [IB_URL, '$image'],
@@ -443,5 +402,100 @@ export const chatPipeline = (userId: any, keyword?: string) => {
 
     // 8. Sort chats by latest message
     { $sort: { 'message.createdAt': -1 } },
+  ];
+};
+
+export const recordsPipeline = (search: string) => {
+  search = search
+    ? processValue(search?.trim()?.toLocaleLowerCase(), 'hash')
+    : search;
+  return [
+    { $sort: { recorded_at: -1 } },
+    {
+      $group: {
+        _id: '$user',
+        doc: { $first: '$$ROOT' },
+      },
+    },
+    { $replaceRoot: { newRoot: '$doc' } },
+
+    // join user
+    ...userPipeline(),
+    ...(search
+      ? [
+          {
+            $match: {
+              $or: [
+                { 'user.hashes.name': { $regex: search, $options: 'i' } },
+                { 'user.hashes.email': { $regex: search, $options: 'i' } },
+              ],
+            },
+          },
+        ]
+      : []),
+  ];
+};
+export const statusCounts = (
+  statuses: string[],
+  filter: any = {},
+  matchto = 'status',
+) => {
+  const group: any = {
+    _id: null,
+    total: { $sum: 1 },
+  };
+
+  statuses.forEach((status) => {
+    group[status] = {
+      $sum: {
+        $cond: [{ $eq: [`$${matchto}`, status] }, 1, 0],
+      },
+    };
+  });
+
+  return [
+    { $match: filter },
+    {
+      $group: group,
+    },
+    {
+      $project: { _id: 0 },
+    },
+  ];
+};
+
+export const countStat = (
+  target: string,
+  matchto: string,
+  model: string,
+  conditions: any[] = [],
+) => {
+  return [
+    {
+      $lookup: {
+        from: model,
+        let: { targetId: `$${target}` },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [{ $eq: [`$${matchto}`, '$$targetId'] }, ...conditions],
+              },
+            },
+          },
+          {
+            $count: 'count',
+          },
+        ],
+        as: `${model}Count`,
+      },
+    },
+    {
+      $addFields: {
+        [`${model}`]: {
+          $ifNull: [{ $arrayElemAt: [`$${model}Count.count`, 0] }, 0],
+        },
+      },
+    },
   ];
 };

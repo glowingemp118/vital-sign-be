@@ -9,7 +9,6 @@ import { Doctor, DoctorSchema } from '../user/schemas/doctor.schema';
 import { Appointment, AppointmentSchema } from './schemas/appointments.schema';
 import { Review, ReviewSchema } from './schemas/reviews.schema';
 import { FeatureController } from './controllers/feature.controller';
-import { FeatureService } from './services/feature.services';
 import { CloudinaryService } from '../utils/cloudinary';
 import { Vital, VitalSchema } from './schemas/vital.schema';
 import { NotificationController } from '../notification/notification.controller';
@@ -20,6 +19,15 @@ import {
   NotificationSchema,
 } from '../notification/notification.schema';
 import { NotificationModule } from 'src/notification/notfication.module';
+import { User, UserSchema } from 'src/user/schemas/user.schema';
+import { DoctorService } from './services/doctor.services';
+import { DoctorController } from './controllers/doctor.controller';
+import { DashboardController } from './controllers/dashboard.controller';
+import { DashboardService } from './services/dashboard.services';
+import {
+  ContactSupport,
+  ContactSupportSchema,
+} from 'src/admin/schemas/admin.schema';
 
 @Module({
   imports: [
@@ -32,6 +40,8 @@ import { NotificationModule } from 'src/notification/notfication.module';
       { name: Vital.name, schema: VitalSchema },
       { name: Device.name, schema: DeviceSchema },
       { name: Notification.name, schema: NotificationSchema },
+      { name: User.name, schema: UserSchema },
+      { name: ContactSupport.name, schema: ContactSupportSchema },
     ]),
   ],
   controllers: [
@@ -39,13 +49,16 @@ import { NotificationModule } from 'src/notification/notfication.module';
     RecordController,
     AppointmentsController,
     NotificationController,
+    DoctorController,
+    DashboardController,
   ],
   providers: [
-    FeatureService,
+    DoctorService,
     RecordService,
     AppointmentsService,
     CloudinaryService,
     NotificationService,
+    DashboardService,
   ],
   exports: [NotificationService],
 })

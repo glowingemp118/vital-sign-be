@@ -274,7 +274,12 @@ export class AdminService {
 
   async updateSpecialty(
     id: string,
-    update: { title?: string; description?: string; image?: string },
+    update: {
+      title?: string;
+      description?: string;
+      image?: string;
+      status?: string;
+    },
   ) {
     return this.specialityModel
       .findByIdAndUpdate(id, update, { new: true })
@@ -286,7 +291,7 @@ export class AdminService {
   }
 
   async getAllSpecialties(query: any) {
-    const { pageno, limit, search } = query;
+    const { pageno, limit, search, status } = query;
     let obj: any = {};
     try {
       if (search) {
@@ -301,6 +306,10 @@ export class AdminService {
             ],
           }
         : {};
+
+      if (status) {
+        obj['status'] = status;
+      }
       const pipeline: any[] = [
         { $match: obj },
         {
@@ -322,10 +331,28 @@ export class AdminService {
           },
         },
       ];
+      const countsPipeline = [
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            active: {
+              $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] },
+            },
+            inactive: {
+              $sum: { $cond: [{ $eq: ['$status', 'inactive'] }, 1, 0] },
+            },
+          },
+        },
+        {
+          $project: { _id: 0 },
+        },
+      ];
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.specialityModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
+      const [counts] = await this.specialityModel.aggregate(countsPipeline);
       const result = finalRes({ pageno, limit, data });
-      return result;
+      return { ...result, meta: { ...result?.meta, ...counts } };
     } catch (err) {
       return finalRes({ pageno, limit, data: [] });
     }

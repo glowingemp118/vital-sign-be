@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import {
   SignInDto,
@@ -20,6 +20,13 @@ import { Doctor } from './schemas/doctor.schema';
 import { Speciality } from '../admin/schemas/speciality.schema';
 import { Device, DevicesDocument } from './schemas/devices.schema';
 import { processObject, processValue } from '../utils/encrptdecrpt';
+import {
+  countStat,
+  finalRes,
+  paginationPipeline,
+  statusCounts,
+} from 'src/utils/dbUtils';
+import { Appointment } from 'src/features/schemas/appointments.schema';
 
 @Injectable()
 export class UserService {
@@ -28,6 +35,7 @@ export class UserService {
     @InjectModel(Device.name) private deviceModel: Model<DevicesDocument>,
     @InjectModel(Doctor.name) private doctorModel: Model<any>,
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
+    @InjectModel(Appointment.name) private appointmentModel: Model<any>,
   ) {}
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
@@ -64,14 +72,18 @@ export class UserService {
       const isUser = user_type === UserType.User;
       const encryted_obj = processObject({ name, email, phone }, 'encrypt');
       const hash_obj = processObject({ name, email, phone }, 'hash');
-      const user = new this.userModel({
+
+      const userData: any = {
         ...dto,
         email,
         password: password,
         otp: this.generateOtp(),
         roles: [user_type],
         ...(isUser ? { ...encryted_obj, hashes: { ...hash_obj } } : {}),
-      });
+      };
+      const user = isExistingUser
+        ? Object.assign(isExistingUser, userData)
+        : new this.userModel(userData);
 
       let savedUser: any = await user.save();
       if (dto?.device_id && dto?.device_type) {
@@ -399,5 +411,108 @@ export class UserService {
   }
   async testDecrypt(body: any) {
     return processObject(body, 'decrypt');
+  }
+  async getUsers(req: any): Promise<any> {
+    try {
+      let {
+        pageno,
+        limit,
+        search,
+        user_type = UserType.User,
+        filter = {},
+        status,
+      } = req.query || {};
+
+      const stats = [
+        ...countStat('_id', 'user', 'appointments', [
+          {
+            $ne: ['$status', 'cancelled'],
+          },
+        ]),
+        ...countStat('_id', 'user', 'records'),
+      ];
+      let obj: any = {
+        ...filter,
+        user_type: user_type,
+      };
+      const dr = req?.user?.user_type == UserType.Doctor;
+      if (dr) {
+        const userIds = await this.appointmentModel.distinct('user', {
+          doctor: new mongoose.Types.ObjectId(req.user._id),
+          status: { $ne: 'cancelled' },
+        });
+        if (userIds.length > 0) {
+          obj._id = { $in: userIds };
+        }
+      }
+      if (status) {
+        obj.status = status;
+      }
+      const pipeline: any[] = [
+        { $match: obj },
+        { $sort: { createdAt: -1 } },
+        ...stats,
+      ]; // Match the filter
+      if (search) {
+        if (user_type === UserType.User) {
+          search = processValue(search || '', 'hash');
+          pipeline.push({
+            $match: {
+              $or: [
+                { 'hashes.name': { $regex: search, $options: 'i' } },
+                { 'hashes.email': { $regex: search, $options: 'i' } },
+                { 'hashes.phone': { $regex: search, $options: 'i' } },
+              ],
+            },
+          });
+        } else {
+          pipeline.push({
+            $match: {
+              $or: [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } },
+              ],
+            },
+          });
+        }
+      }
+      if (pageno && limit) {
+        pipeline.push(paginationPipeline({ pageno, limit }));
+      }
+      pipeline.push({
+        $project: {
+          name: 1,
+          email: 1,
+          phone: 1,
+          country: 1,
+          status: 1,
+          hashes: 1,
+          appointments: 1,
+          records: 1,
+          image: { $concat: [process.env.IB_URL || '', '$image'] },
+        },
+      });
+
+      const data = await this.userModel.aggregate(pipeline);
+      const result = finalRes({ pageno, limit, data });
+      const [count] = await this.userModel.aggregate(
+        statusCounts(['active', 'inactive', 'blocked', 'deleted'], {
+          user_type,
+        }),
+      );
+      const fres = {
+        meta: { ...result.meta, ...count },
+        data: result?.data?.map((r: any) => {
+          delete r?.hashes;
+          return {
+            ...processObject(r, 'decrypt'),
+          };
+        }),
+      };
+      return fres;
+    } catch (err) {
+      throw new Error(err?.message);
+    }
   }
 }

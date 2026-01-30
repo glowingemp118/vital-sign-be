@@ -3,114 +3,177 @@ import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose'; // Assuming you have a Doctor model
 import moment from 'moment'; // For handling timezones
 import { Appointment } from '../schemas/appointments.schema';
-import { Doctor } from '../../user/schemas/doctor.schema';
-import { validateParams } from '../../utils/validations';
-import { processObject, processValue } from '../../utils/encrptdecrpt';
-import {
-  appointmentPipeline,
-  finalRes,
-  paginationPipeline,
-  searchPipeline,
-  sort,
-} from '../../utils/dbUtils';
-import { UserType } from '../../user/dto/user.dto';
-import { Review } from '../schemas/reviews.schema';
+import { User } from 'src/user/schemas/user.schema';
+import { ContactSupport } from 'src/admin/schemas/admin.schema';
+import { UserType } from 'src/user/dto/user.dto';
+import { statusCounts } from 'src/utils/dbUtils';
 
 @Injectable()
 export class DashboardService {
   constructor(
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
-    @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
-    @InjectModel(Review.name) private reviewModel: Model<Review>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(ContactSupport.name)
+    private contactSupportModel: Model<ContactSupport>,
   ) {}
-  async getAppointmentStatusCounts(user: any, year?: number, month?: number) {
-    const match = this.buildMatch(user, year, month);
+  async getDashboardStats(req: any): Promise<any> {
+    try {
+      const { user } = req;
+      let { year, filter = {} } = req.query || {};
+      const isDoctor = user?.user_type === UserType.Doctor;
+      const appfilter: any = {};
+      if (isDoctor) {
+        appfilter.doctor = new mongoose.Types.ObjectId(user._id);
+        const userIds = await this.appointmentModel.distinct('user', {
+          ...appfilter,
+          status: { $ne: 'cancelled' },
+        });
+        filter._id = { $in: userIds };
+      }
+      const userTypeCounts = await this.userModel.aggregate([
+        { $match: { ...filter } },
+        {
+          $group: {
+            _id: '$user_type',
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+      const patientCount =
+        userTypeCounts.find((item) => item._id === UserType.User)?.count || 0;
+      const doctorCount =
+        userTypeCounts.find((item) => item._id === UserType.Doctor)?.count || 0;
 
-    const statuses = ['pending', 'confirmed', 'cancelled', 'completed'];
+      const [countAppointments = {}] = await this.appointmentModel.aggregate(
+        statusCounts(
+          ['pending', 'confirmed', 'completed', 'cancelled'],
+          appfilter,
+        ),
+      );
+      const graphData = await this.getAppointmentsGraphData(year, appfilter);
+      const result = {
+        patients: patientCount,
+        appointments: {
+          ...countAppointments,
+        },
+        graphData,
+      };
+      if (!isDoctor) {
+        const contactSupportCount =
+          await this.contactSupportModel.countDocuments({});
+        result['doctors'] = doctorCount;
+        result['contactSupports'] = contactSupportCount;
+      }
 
-    const result = await this.appointmentModel.aggregate([
-      { $match: match },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
-    ]);
+      return result;
+    } catch (error) {
+      console.log(error?.message);
 
-    return statuses.reduce(
-      (acc, status) => {
-        acc[status] = result.find((r) => r._id === status)?.count || 0;
-        return acc;
-      },
-      {} as Record<string, number>,
-    );
+      throw new BadRequestException(error?.message);
+    }
   }
+  async getAppointmentsGraphData(
+    year: number = new Date().getFullYear(),
+    filter = {},
+  ): Promise<any> {
+    const aggregationPipeline: any = [
+      {
+        // Match appointments for the specified year and filter
+        $match: {
+          ...filter,
+          date: {
+            $gte: new Date(`${year}-01-01T00:00:00Z`),
+            $lt: new Date(`${year + 1}-01-01T00:00:00Z`),
+          },
+        },
+      },
+      {
+        // Ensure date is in proper format and extract year and month
+        $project: {
+          month: { $month: '$date' }, // Extract the month
+          status: 1,
+        },
+      },
+      {
+        // Group by year and month, and calculate status counts in one step
+        $group: {
+          _id: '$month', // Group by month
+          pending: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+          },
+          confirmed: {
+            $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] },
+          },
+          cancelled: {
+            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+          },
+          completed: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
+          },
+        },
+      },
+      {
+        // Sort by year and month
+        $sort: { month: 1 },
+      },
+    ];
 
-  async getCompletedGraphStats(
-    user: any,
-    {
-      type = 'month',
-      year,
-      month,
-    }: { type?: 'month' | 'year'; year: number; month?: number },
-  ) {
-    const match = {
-      ...this.buildMatch(user, year, month),
-      status: 'completed',
+    // Execute the aggregation pipeline
+    const result = await this.appointmentModel
+      .aggregate(aggregationPipeline)
+      .exec();
+    // Mapping the month data to include month names and return complete statuses
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    const processMonthData = (monthData: any) => {
+      // Initialize the result array for the processed months
+      const result = [];
+
+      // Iterate over each month (1 to 12)
+      monthNames.forEach((monthName, index) => {
+        const monthNumber = index + 1;
+
+        // Find the month data for the current month number
+        const monthInfo = monthData.find(
+          (data: any) => data._id === monthNumber,
+        );
+
+        // If the month is found, add it to the result
+        if (monthInfo) {
+          result.push({
+            ...monthInfo, // Copy the found data
+            month: monthName, // Add the month name
+          });
+        } else {
+          // If the month is not found, create an entry with 0 counts for all statuses
+          result.push({
+            _id: monthNumber,
+            month: monthName,
+            pending: 0,
+            confirmed: 0,
+            cancelled: 0,
+            completed: 0,
+          });
+        }
+      });
+
+      return result;
     };
 
-    const groupBy =
-      type === 'month' ? { $dayOfMonth: '$date' } : { $month: '$date' };
-
-    const data = await this.appointmentModel.aggregate([
-      { $match: match },
-      { $group: { _id: groupBy, count: { $sum: 1 } } },
-      { $sort: { _id: 1 } },
-    ]);
-
-    return type === 'month'
-      ? this.fillDays(data, year, month!)
-      : this.fillMonths(data);
-  }
-
-  private buildMatch(user: any, year?: number, month?: number) {
-    const match: any = {};
-    const { _id, user_type } = user;
-
-    if (user_type === UserType.User)
-      match.user = new mongoose.Types.ObjectId(_id);
-    if (user_type === UserType.Doctor)
-      match.doctor = new mongoose.Types.ObjectId(_id);
-
-    if (!year) return match;
-
-    match.date = month
-      ? {
-          $gte: moment
-            .utc({ year, month: month - 1 })
-            .startOf('month')
-            .toDate(),
-          $lte: moment
-            .utc({ year, month: month - 1 })
-            .endOf('month')
-            .toDate(),
-        }
-      : {
-          $gte: moment.utc({ year }).startOf('year').toDate(),
-          $lte: moment.utc({ year }).endOf('year').toDate(),
-        };
-
-    return match;
-  }
-
-  private fillDays(data: any[], year: number, month: number) {
-    const days = moment.utc({ year, month: month - 1 }).daysInMonth();
-    return Array.from({ length: days }, (_, i) => ({
-      day: i + 1,
-      count: data.find((d) => d._id === i + 1)?.count || 0,
-    }));
-  }
-
-  private fillMonths(data: any[]) {
-    return Array.from({ length: 12 }, (_, i) => ({
-      month: moment().month(i).format('MMM'),
-      count: data.find((d) => d._id === i + 1)?.count || 0,
-    }));
+    // If result exists, process the month data; otherwise, return an empty array
+    return result.length > 0 ? processMonthData(result) : [];
   }
 }

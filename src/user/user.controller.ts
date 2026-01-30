@@ -138,4 +138,11 @@ export class UserController {
   async deleteAccount(@Request() req) {
     return this.userService.softDeleteUser(req.user._id);
   }
+
+  @ApiTags('User')
+  @Get('users')
+  @ApiBearerAuth()
+  async getUsers(@Request() req) {
+    return this.userService.getUsers(req);
+  }
 }

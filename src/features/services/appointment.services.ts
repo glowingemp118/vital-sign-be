@@ -12,6 +12,7 @@ import {
   paginationPipeline,
   searchPipeline,
   sort,
+  statusCounts,
 } from '../../utils/dbUtils';
 import { UserType } from '../../user/dto/user.dto';
 import { Review } from '../schemas/reviews.schema';
@@ -226,14 +227,30 @@ export class AppointmentsService {
   }
 
   async getAllAppointments(user: any, query: any) {
-    const { pageno, limit, search, status, order, filter = {} } = query;
+    const {
+      pageno,
+      limit,
+      search,
+      status,
+      order,
+      patience,
+      dr,
+      filter = {},
+    } = query;
     const { _id, user_type } = user;
     let obj: any = { ...filter };
     try {
+      const isAdmin = user_type == UserType.Admin;
       if (user_type == UserType.User) {
         obj.user = new mongoose.Types.ObjectId(_id);
       } else if (user_type == UserType.Doctor) {
         obj.doctor = new mongoose.Types.ObjectId(_id);
+      } else if (isAdmin) {
+        if (patience) {
+          obj.user = new mongoose.Types.ObjectId(patience);
+        } else if (dr) {
+          obj.doctor = new mongoose.Types.ObjectId(dr);
+        }
       }
       if (status && status !== 'all') {
         obj.status = status;
@@ -260,8 +277,15 @@ export class AppointmentsService {
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.appointmentModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
-      const mRes = {
-        ...result,
+      let count = {};
+      if (isAdmin || user_type == UserType.Doctor) {
+        const [countResult] = await this.appointmentModel.aggregate(
+          statusCounts(['pending', 'confirmed', 'cancelled', 'completed']),
+        );
+        count = countResult;
+      }
+      return {
+        meta: { ...result?.meta, ...count },
         data: result?.data?.map((a: any) => {
           return {
             ...a,
@@ -270,7 +294,6 @@ export class AppointmentsService {
           };
         }),
       };
-      return mRes;
     } catch (err) {
       return finalRes({ pageno, limit, data: [] });
     }
@@ -336,6 +359,7 @@ export class AppointmentsService {
 
   async getAppointmentById(user: any, appointmentId: string) {
     try {
+      const isAdmin = user?.user_type == UserType.Admin;
       // Validate appointmentId
       if (!appointmentId) {
         throw new Error('Appointment ID is required');
@@ -350,6 +374,15 @@ export class AppointmentsService {
         throw new Error(
           'Appointment not found or you do not have permission to view this appointment',
         );
+      }
+
+      if (isAdmin) {
+        const review = await this.reviewModel
+          .findOne({
+            appointment: new mongoose.Types.ObjectId(appointmentId),
+          })
+          .lean();
+        appointment.review = review;
       }
 
       return appointment;

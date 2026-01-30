@@ -22,6 +22,12 @@ export class RecordController {
     return this.recordService.createUpdate(req);
   }
 
+  @Get('/')
+  @ApiBearerAuth()
+  getRecords(@Request() req) {
+    return this.recordService.getRecords(req);
+  }
+
   @Post('/bulk')
   @ApiBearerAuth()
   bulkCreateUpdate(@Request() req) {
@@ -58,12 +64,6 @@ export class RecordController {
     return this.recordService.activityRecords(req);
   }
 
-  @Get('/:id')
-  @ApiBearerAuth()
-  findOne(@Param('id') id: string) {
-    return this.recordService.findOne(id);
-  }
-
   @Put('/:id')
   @ApiBearerAuth()
   update(@Param('id') id: string, @Body() updateRecordDto: any) {
@@ -74,5 +74,22 @@ export class RecordController {
   @ApiBearerAuth()
   remove(@Param('id') id: string) {
     return this.recordService.remove(id);
+  }
+
+  @Get('/user/:userId')
+  @ApiBearerAuth()
+  getUserRecords(@Request() req) {
+    const user = { _id: req.params.userId };
+    return this.recordService.homeRecords({ user, fetchUser: true });
+  }
+  @Get('/user/:userId/:key')
+  @ApiBearerAuth()
+  getUserKeyRecords(@Request() req) {
+    const user = { _id: req.params.userId };
+    const key = req.params.key;
+    return this.recordService.singleVitalRecord({
+      user,
+      query: { vital: key },
+    });
   }
 }

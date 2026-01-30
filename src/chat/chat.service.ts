@@ -102,16 +102,17 @@ export class ChatService {
       const formattedRes = {
         ...res,
         data: res?.data.map((msg: any) => {
-          ['updatedAt', '__v', 'status', 'readBy', 'type'].forEach(
-            (field) => delete msg[field],
-          );
           const timesince = moment(msg.createdAt).tz(timezone).fromNow();
-          return {
+          const mdata = {
             ...msg,
             content: processValue(msg.content, 'decrypt'),
             timesince,
-            isRead: msg.readBy && msg.readBy.includes(userId),
+            isRead: msg.readBy && msg.readBy.includes(otherUserId),
           };
+          ['updatedAt', '__v', 'status', 'readBy', 'type'].forEach(
+            (field) => delete mdata[field],
+          );
+          return mdata;
         }),
       };
 
@@ -198,7 +199,11 @@ export class ChatService {
           title: msg.title,
           message: content?.substring(0, 100),
           type: msg.type,
-          object: { messageId: message._id, objectId, subjectId: userId },
+          object: {
+            messageId: message._id,
+            objectId: userId,
+            subjectId: objectId,
+          },
         });
       }
       return {

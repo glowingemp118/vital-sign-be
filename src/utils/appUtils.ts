@@ -17,6 +17,10 @@ export const modifiedUser = (user: any) => {
 export const addDr = async (user: any, body: any, models: any) => {
   try {
     let { specialties: sps, experience, about } = body;
+    const isExist = await models.dr.findOne({ user: user._id });
+    if (isExist) {
+      return isExist;
+    }
     sps = sps?.map((s: string) => new mongoose.Types.ObjectId(s));
     const specialties = await models.specialty
       .find({
