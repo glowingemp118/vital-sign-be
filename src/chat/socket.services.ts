@@ -79,8 +79,8 @@ export class SocketService {
     } = { subjectId, type };
 
     if (objectId) query.objectId = objectId;
-
-    return this.socketConnectionModel.deleteMany(query);
+    await this.socketConnectionModel.deleteMany(query);
+    return { message: 'Connections deleted successfully' };
   }
 
   // Retrieve connection by chatRoomId

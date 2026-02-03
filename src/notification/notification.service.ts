@@ -52,16 +52,18 @@ export class NotificationService {
   }
 
   async deleteNotification(notificationId: string, userId: string) {
-    return this.notificationModel
+    await this.notificationModel
       .findOneAndDelete({
         _id: new mongoose.Types.ObjectId(notificationId),
         user: userId,
       })
       .exec();
+    return { message: 'Notification deleted successfully' };
   }
 
   async deleteAllNotifications(userId: string) {
-    return this.notificationModel.deleteMany({ user: userId }).exec();
+    await this.notificationModel.deleteMany({ user: userId }).exec();
+    return { message: 'All notifications deleted successfully' };
   }
   async sendNotification(body: any) {
     try {
