@@ -124,3 +124,36 @@ export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
       return 'unknown';
   }
 }
+const STATUS_COPY: Record<
+  Exclude<VitalStatus, 'normal' | 'unknown'>,
+  {
+    label: (title: string) => string;
+    message: (title: string, value: string, unit?: string) => string;
+  }
+> = {
+  high: {
+    label: (t) => `High ${t}`,
+    message: (t, v, u) => `${t} is higher than usual (${v}${u ? ` ${u}` : ''})`,
+  },
+  low: {
+    label: (t) => `Low ${t}`,
+    message: (t, v, u) => `${t} is lower than normal (${v}${u ? ` ${u}` : ''})`,
+  },
+  critical: {
+    label: (t) => `Critical ${t}`,
+    message: (t, v, u) =>
+      `Dangerously abnormal ${t.toLowerCase()} detected (${v}${u ? ` ${u}` : ''})`,
+  },
+};
+export function getVitalMessage(
+  vital: any,
+  value: string,
+  status: string,
+): any {
+  const copy = STATUS_COPY[status];
+  return {
+    status,
+    label: copy.label(vital.title),
+    message: copy.message(vital.title, value, vital.unit),
+  };
+}

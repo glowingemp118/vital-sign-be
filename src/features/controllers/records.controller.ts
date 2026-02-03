@@ -64,6 +64,12 @@ export class RecordController {
     return this.recordService.activityRecords(req);
   }
 
+  @Get('/history')
+  @ApiBearerAuth()
+  historyRecords(@Request() req: any) {
+    return this.recordService.historyRecords(req);
+  }
+
   @Put('/:id')
   @ApiBearerAuth()
   update(@Param('id') id: string, @Body() updateRecordDto: any) {

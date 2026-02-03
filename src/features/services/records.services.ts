@@ -12,11 +12,12 @@ import {
 } from '../../utils/dbUtils';
 import { processObject, processValue } from '../../utils/encrptdecrpt';
 import { Vital } from '../schemas/vital.schema';
-import { getVitalStatus } from 'src/utils/appUtils';
+import { getVitalMessage, getVitalStatus } from 'src/utils/appUtils';
 import { User } from 'src/user/schemas/user.schema';
 import moment from 'moment-timezone';
 import { Appointment } from '../schemas/appointments.schema';
 import { UserType } from 'src/user/dto/user.dto';
+import { Alert } from '../schemas/alert.schema';
 @Injectable()
 export class RecordService {
   constructor(
@@ -24,6 +25,7 @@ export class RecordService {
     @InjectModel(Vital.name) private vitalModel: Model<Vital>,
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
+    @InjectModel(Alert.name) private alertModel: Model<Alert>,
   ) {}
   homeVitals = [
     'bloodPressure',
@@ -50,11 +52,8 @@ export class RecordService {
       const timezone = req?.user?.timzone || 'UTC';
       // recorded_at = moment.tz(recorded_at, timezone).toDate();
       vital = new mongoose.Types.ObjectId(vital);
-      value = processValue(String(value), 'encrypt');
 
-      const vitalDoc = await this.vitalModel
-        .findById(new mongoose.Types.ObjectId(vital))
-        .exec();
+      const vitalDoc = await this.vitalModel.findById(vital).exec();
       if (!vitalDoc) {
         throw new Error('Vital not found');
       }
@@ -67,10 +66,6 @@ export class RecordService {
         })
         .exec();
       if (existing) {
-        // Update existing record
-        // existing.value = value;
-        // existing.status = status;
-        // return await existing.save();
         return existing;
       }
       const vstatus = getVitalStatus(vitalDoc.key as any, value);
@@ -79,24 +74,85 @@ export class RecordService {
         user,
         recorded_at,
         vital,
-        value,
+        value: processValue(String(value), 'encrypt'),
         status: vstatus !== 'unknown' ? vstatus : 'normal',
       });
       await newRecord.save();
-      if (vstatus == 'critical') {
+      if (body.isSaved) {
+        await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
       }
       return newRecord;
     } catch (error) {
       throw new Error(error?.message);
     }
   }
+
+  addAlert = async (
+    userId: mongoose.Types.ObjectId,
+    vitalDoc: Vital,
+    body: any,
+    vstatus: string,
+  ) => {
+    try {
+      if (vstatus == 'normal' || vstatus == 'unknown') {
+        this.alertModel
+          .updateOne(
+            { user: userId },
+            { $pull: { alerts: { vital: vitalDoc.key } } },
+          )
+          .exec();
+        return;
+      }
+      const msg = getVitalMessage(vitalDoc, body.value, vstatus);
+      if (!msg) return;
+
+      const alert = {
+        vital: vitalDoc.key,
+        status: vstatus,
+        label: msg.label,
+        message: msg.message,
+        recorded_at: body.recorded_at,
+      };
+      const result = await this.alertModel.updateOne(
+        { user: userId, 'alerts.vital': vitalDoc.key },
+        {
+          $set: {
+            'alerts.$': alert,
+          },
+        },
+      );
+      if (result.matchedCount === 0) {
+        await this.alertModel.updateOne(
+          { user: userId },
+          { $push: { alerts: alert } },
+          { upsert: true },
+        );
+      }
+    } catch (error) {
+      throw new Error(error?.message);
+    }
+  };
+
   async bulkCreateUpdate(req: any): Promise<any> {
     const bodyArray = Array.isArray(req.body) ? req.body : [req.body];
     const user = req.user;
     const results: Record[] = [];
-    const promises = bodyArray.map((body: any) =>
-      this.createUpdate({ body, user }),
-    );
+    const savedVitalIds = new Set<string>();
+
+    const promises = [...bodyArray]
+      .sort(
+        (a, b) =>
+          new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
+      )
+      .map((body) => {
+        const isSaved = !savedVitalIds.has(body.vital);
+        if (isSaved) savedVitalIds.add(body.vital);
+
+        return this.createUpdate({
+          body: { ...body, isSaved },
+          user,
+        });
+      });
     const settledResults = await Promise.allSettled(promises);
     for (const res of settledResults) {
       if (res.status === 'fulfilled') {
@@ -122,7 +178,6 @@ export class RecordService {
     const isHome = home === 'true';
     const isActivity = activity === 'true';
     const timeFilter = time || '7days';
-
     // Define vital keys for home
     let vitals: string[] = [];
     if (isHome) {
@@ -154,7 +209,6 @@ export class RecordService {
     } else {
       startDate = new Date(0); // all time
     }
-
     // Build query
     const match: any = {
       ...filter,
@@ -208,14 +262,18 @@ export class RecordService {
     return vital;
   }
 
-  private formatGraphData(records: any[]): any[] {
+  private formatGraphData(records: any[], checkToday: boolean = true): any[] {
     // Group records by recorded_at date (YYYY-MM-DD)
     const grouped: { [date: string]: any[] } = {};
 
     records.forEach((rec: any) => {
       const date = new Date(rec.recorded_at).toISOString().split('T')[0];
       if (!grouped[date]) grouped[date] = [];
-      let formatted: any = { value: rec.value, recorded_at: rec.recorded_at };
+      let formatted: any = {
+        value: rec.value,
+        recorded_at: rec.recorded_at,
+        // vital: rec.vital?.key,
+      };
       if (rec.vital?.key === 'bloodPressure' && typeof rec.value === 'string') {
         const [systolic = 0, diastolic = 0] = rec.value
           .split('/')
@@ -227,11 +285,19 @@ export class RecordService {
 
     // Convert grouped object to array sorted by date
     return Object.entries(grouped)
-      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
-      .map(([date, records]) => ({
-        date,
-        records,
-      }));
+      .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+      .map(([date, records]) => {
+        if (checkToday) {
+          const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+          if (date !== today) {
+            records = [records[0]]; // Keep only the latest record
+          }
+        }
+        return {
+          date,
+          records,
+        };
+      });
   }
 
   async homeRecords(req: any): Promise<any> {
@@ -275,10 +341,14 @@ export class RecordService {
         userData = processObject(duser, 'decrypt');
       }
     }
-
+    const alert = await this.alertModel
+      .findOne({ user: new mongoose.Types.ObjectId(user._id) })
+      .lean()
+      .exec();
     return {
       ...(userData && { user: userData }),
       records: homeRes,
+      alerts: alert?.alerts || [],
       activity: activityRes,
       trendGraph: bpGraph || [],
     };
@@ -413,6 +483,85 @@ export class RecordService {
       return fres;
     } catch (err) {
       throw new Error(err?.message);
+    }
+  }
+  async historyRecords(req: any): Promise<any> {
+    try {
+      const user = req.user;
+      let { from, to, date, vital } = req.query || {};
+      const filter = { from, to };
+      // Get latest home vitals, sorted by homeVitals order
+      if (date) {
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(date);
+        end.setHours(23, 59, 59, 999);
+        filter.from = start.toISOString();
+        filter.to = end.toISOString();
+      }
+      if (vital) {
+        filter['vital'] = vital;
+      } else {
+        filter['home'] = 'true';
+      }
+      const homeResRaw = await this.vitalRecords({
+        query: { ...filter },
+        user,
+      });
+      if (date && vital) {
+        const homeRes = this.homeVitals
+          .map((key) => homeResRaw.find((rec: any) => rec.vital?.key === key))
+          .filter(Boolean);
+
+        return {
+          record: homeRes[0] || null,
+          trendGraph: this.formatGraphData(homeResRaw, false),
+        };
+      }
+      const startDate = new Date(from);
+      const endDate = new Date(to);
+
+      // Create an array of all dates between the from and to date
+      const allDates = [];
+      for (
+        let current = startDate;
+        current <= endDate;
+        current.setDate(current.getDate() + 1)
+      ) {
+        allDates.push(new Date(current).toISOString().split('T')[0]); // Store only the YYYY-MM-DD part
+      }
+
+      // Map each date to its corresponding vital records
+      const result = allDates.map((dateKey) => {
+        // Filter records for the current date
+        const recordsForDate = homeResRaw.filter((record: any) => {
+          const recordDate = new Date(record?.recorded_at)
+            .toISOString()
+            .split('T')[0]; // Extract the date part
+          return recordDate === dateKey;
+        });
+
+        // Map to homeVitals keys, ensuring there are 4 records (if available)
+        const homeRes = this.homeVitals?.map((key) => {
+          let rec = recordsForDate.find((rec: any) => rec.vital?.key === key);
+          if (!rec) {
+            const prec = homeResRaw.find((rec: any) => rec.vital?.key === key);
+            rec = {
+              ...prec,
+              recorded_at: dateKey,
+            };
+          }
+          return rec;
+        });
+        return {
+          date: dateKey,
+          records: homeRes,
+        };
+      });
+
+      return result;
+    } catch (error) {
+      throw new Error(error?.message);
     }
   }
 }

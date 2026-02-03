@@ -28,6 +28,7 @@ import {
   ContactSupport,
   ContactSupportSchema,
 } from 'src/admin/schemas/admin.schema';
+import { Alert, AlertSchema } from './schemas/alert.schema';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import {
       { name: Notification.name, schema: NotificationSchema },
       { name: User.name, schema: UserSchema },
       { name: ContactSupport.name, schema: ContactSupportSchema },
+      { name: Alert.name, schema: AlertSchema },
     ]),
   ],
   controllers: [

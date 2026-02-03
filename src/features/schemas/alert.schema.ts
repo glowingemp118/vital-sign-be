@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type AlertDocument = Alert & Document;
 
-@Schema({ timestamps: true })
+@Schema()
 export class Alert {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
@@ -11,23 +11,21 @@ export class Alert {
   @Prop({
     type: [
       {
-        message: { type: String, required: true },
-        type: {
-          type: String,
-          enum: ['info', 'warning', 'error', 'success'],
-          default: 'info',
-        },
-        isRead: { type: Boolean, default: false },
-        createdAt: { type: Date, default: Date.now },
+        message: String,
+        status: String,
+        label: String,
+        vital: String,
+        recorded_at: Date,
       },
     ],
     default: [],
   })
   alerts: Array<{
     message: string;
-    type: string;
-    isRead: boolean;
-    createdAt: Date;
+    status: string;
+    label: string;
+    vital: string;
+    recorded_at: Date;
   }>;
 }
 
