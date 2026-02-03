@@ -34,9 +34,10 @@ export class Appointment {
     default: 'pending',
   })
   status: string;
-
   @Prop()
   notes: string;
+  @Prop()
+  cancelled: { reason: string; cancelledAt: Date; cancelledBy: string };
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

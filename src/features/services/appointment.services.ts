@@ -301,7 +301,10 @@ export class AppointmentsService {
 
   async updateAppointmentStatus(req: any) {
     try {
-      const { status } = req?.body;
+      const { status, reason } = req?.body;
+      if (status == 'cancelled' && !reason) {
+        throw new Error('Reason is required for cancelling an appointment');
+      }
       const id = new mongoose.Types.ObjectId(req?.params?.id);
       const { _id, user_type } = req.user;
       if (!status || status == 'pending') {
@@ -325,7 +328,16 @@ export class AppointmentsService {
       }
       // Update the status of the appointment
       existingAppointment.status = status;
-
+      if (status == 'cancelled') {
+        if (existingAppointment.status !== 'pending') {
+          throw new Error('Only pending appointments can be cancelled');
+        }
+        existingAppointment.cancelled = {
+          reason: reason,
+          cancelledAt: new Date(),
+          cancelledBy: _id,
+        };
+      }
       // Save the updated appointment document
       existingAppointment.save();
       const sndNotification = async () => {
