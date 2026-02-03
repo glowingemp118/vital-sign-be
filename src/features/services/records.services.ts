@@ -87,12 +87,12 @@ export class RecordService {
     }
   }
 
-  addAlert = async (
+  async addAlert(
     userId: mongoose.Types.ObjectId,
     vitalDoc: Vital,
     body: any,
     vstatus: string,
-  ) => {
+  ) {
     try {
       if (vstatus == 'normal' || vstatus == 'unknown') {
         this.alertModel
@@ -131,7 +131,7 @@ export class RecordService {
     } catch (error) {
       throw new Error(error?.message);
     }
-  };
+  }
 
   async bulkCreateUpdate(req: any): Promise<any> {
     const bodyArray = Array.isArray(req.body) ? req.body : [req.body];
