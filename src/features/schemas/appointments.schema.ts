@@ -36,7 +36,13 @@ export class Appointment {
   status: string;
   @Prop()
   notes: string;
-  @Prop()
+  @Prop({
+    type: {
+      reason: { type: String },
+      cancelledAt: { type: Date },
+      cancelledBy: { type: String },
+    },
+  })
   cancelled: { reason: string; cancelledAt: Date; cancelledBy: string };
 }
 
