@@ -540,7 +540,6 @@ export class RecordService {
             .split('T')[0]; // Extract the date part
           return recordDate === dateKey;
         });
-
         // Map to homeVitals keys, ensuring there are 4 records (if available)
         const homeRes = this.homeVitals?.map((key) => {
           let rec = recordsForDate.find((rec: any) => rec.vital?.key === key);
@@ -548,7 +547,9 @@ export class RecordService {
             const prec = homeResRaw.find((rec: any) => rec.vital?.key === key);
             rec = {
               ...prec,
-              recorded_at: dateKey,
+              value: '0',
+              recorded_at: new Date(dateKey),
+              status: 'normal',
             };
           }
           return rec;
