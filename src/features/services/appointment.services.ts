@@ -327,7 +327,7 @@ export class AppointmentsService {
         throw new Error(`Already ${status}`);
       }
       // Update the status of the appointment
-      existingAppointment.status = status;
+
       if (status == 'cancelled') {
         if (existingAppointment.status !== 'pending') {
           throw new Error('Only pending appointments can be cancelled');
@@ -338,6 +338,7 @@ export class AppointmentsService {
           cancelledBy: _id,
         };
       }
+      existingAppointment.status = status;
       // Save the updated appointment document
       existingAppointment.save();
       const sndNotification = async () => {
