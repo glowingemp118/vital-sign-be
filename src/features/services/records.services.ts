@@ -198,8 +198,13 @@ export class RecordService {
     let startDate = new Date();
 
     if (from && to) {
-      startDate = new Date(from);
-      now = new Date(to);
+      const fromDate = new Date(from);
+      fromDate.setHours(23, 59, 0, 0);
+      startDate = fromDate;
+
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      now = toDate;
     } else if (timeFilter === '24hrs') {
       startDate = new Date(Date.now());
     } else if (timeFilter === '7days') {
