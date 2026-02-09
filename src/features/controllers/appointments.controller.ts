@@ -31,7 +31,6 @@ export class AppointmentsController {
   }
 
   @Get('/')
-  @Access(UserType.User, UserType.Doctor)
   async getAppointments(
     @Request() req, // User data from JWT or session
   ) {
@@ -42,7 +41,6 @@ export class AppointmentsController {
   }
 
   @Get('/:id')
-  @Access(UserType.User, UserType.Doctor)
   async getAppointmentById(
     @Request() req, // User data from JWT or session
   ) {

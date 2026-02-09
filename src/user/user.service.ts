@@ -415,8 +415,8 @@ export class UserService {
   async getUsers(req: any): Promise<any> {
     try {
       let {
-        pageno,
-        limit,
+        pageno = 1,
+        limit = 10,
         search,
         user_type = UserType.User,
         filter = {},
@@ -477,9 +477,7 @@ export class UserService {
           });
         }
       }
-      if (pageno && limit) {
-        pipeline.push(paginationPipeline({ pageno, limit }));
-      }
+
       pipeline.push({
         $project: {
           name: 1,
@@ -493,8 +491,11 @@ export class UserService {
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });
-
+      if (pageno && limit) {
+        pipeline.push(paginationPipeline({ pageno, limit }));
+      }
       const data = await this.userModel.aggregate(pipeline);
+
       const result = finalRes({ pageno, limit, data });
       const [count] = await this.userModel.aggregate(
         statusCounts(['active', 'inactive', 'blocked', 'deleted'], {

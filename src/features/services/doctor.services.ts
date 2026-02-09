@@ -66,6 +66,7 @@ export class DoctorService {
         const [countResult] = await this.userModel.aggregate(
           statusCounts(['active', 'inactive', 'blocked'], {
             user_type: UserType.Doctor,
+            is_verified: true,
           }),
         );
         count = countResult;

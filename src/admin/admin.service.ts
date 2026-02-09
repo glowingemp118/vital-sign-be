@@ -1,7 +1,11 @@
 // src/services/admin.service.ts
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import {
   Settings,
   SettingsDocument,
@@ -258,6 +262,25 @@ export class AdminService {
       });
     }
     return { ...user };
+  }
+
+  async updateDoctorStatus(userId: string, status: string) {
+    const user = await this.userModel.findOne({
+      _id: new mongoose.Types.ObjectId(userId),
+      user_type: UserType.Doctor,
+    });
+
+    if (!user) {
+      throw new NotFoundException('Doctor not found');
+    }
+
+    user.status = status;
+    await user.save();
+
+    return {
+      message: 'Doctor status updated successfully',
+      status: user.status,
+    };
   }
 
   // Specialty Methods
