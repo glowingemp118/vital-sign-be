@@ -281,6 +281,7 @@ export class AppointmentsService {
       if (isAdmin || user_type == UserType.Doctor) {
         const [countResult] = await this.appointmentModel.aggregate(
           statusCounts(['pending', 'confirmed', 'cancelled', 'completed']),
+          !isAdmin && { $match: { doctor: new mongoose.Types.ObjectId(_id) } },
         );
         count = countResult;
       }

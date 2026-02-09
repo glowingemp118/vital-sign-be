@@ -162,7 +162,28 @@ export class RecordService {
     const homeRes = await this.homeRecords({ user });
     return homeRes;
   }
+  getDateFilter(from: string, to: string, timeFilter: string) {
+    let now = new Date();
+    let startDate = new Date();
+    if (from && to) {
+      const fromDate = new Date(from);
+      fromDate.setHours(23, 59, 0, 0);
+      startDate = fromDate;
 
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      now = toDate;
+    } else if (timeFilter === '24hrs') {
+      startDate = new Date(Date.now());
+    } else if (timeFilter === '7days') {
+      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeFilter === '30days') {
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    } else {
+      startDate = new Date(0); // all time
+    }
+    return { startDate, now };
+  }
   async vitalRecords(req: any): Promise<any> {
     const { query, user } = req;
     const {
@@ -194,26 +215,8 @@ export class RecordService {
 
     // Time range calculation
     // let timezone = user?.timezone || 'UTC'; // Fixed typo from 'timzone' to 'timezone'
-    let now = new Date();
-    let startDate = new Date();
 
-    if (from && to) {
-      const fromDate = new Date(from);
-      fromDate.setHours(23, 59, 0, 0);
-      startDate = fromDate;
-
-      const toDate = new Date(to);
-      toDate.setHours(23, 59, 59, 999);
-      now = toDate;
-    } else if (timeFilter === '24hrs') {
-      startDate = new Date(Date.now());
-    } else if (timeFilter === '7days') {
-      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    } else if (timeFilter === '30days') {
-      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    } else {
-      startDate = new Date(0); // all time
-    }
+    const { startDate, now } = this.getDateFilter(from, to, timeFilter);
     // Build query
     const match: any = {
       ...filter,
@@ -307,10 +310,10 @@ export class RecordService {
 
   async homeRecords(req: any): Promise<any> {
     const user = req.user;
-    const { time } = req.query || {};
+    const { time, from, to } = req.query || {};
     // Get latest home vitals, sorted by homeVitals order
     const homeResRaw = await this.vitalRecords({
-      query: { home: 'true' },
+      query: { home: 'true', time },
       user,
     });
 
@@ -320,7 +323,7 @@ export class RecordService {
 
     // Get latest activity vital (steps)
     const activityResRaw = await this.vitalRecords({
-      query: { vital: 'steps' },
+      query: { vital: 'steps', time },
       user,
     });
 
@@ -346,8 +349,12 @@ export class RecordService {
         userData = processObject(duser, 'decrypt');
       }
     }
+    const { startDate, now } = this.getDateFilter(from, to, time || '7days');
     const alert = await this.alertModel
-      .findOne({ user: new mongoose.Types.ObjectId(user._id) })
+      .findOne({
+        user: new mongoose.Types.ObjectId(user._id),
+        'alerts.recorded_at': { $gte: startDate, $lte: now },
+      })
       .lean()
       .exec();
     return {
