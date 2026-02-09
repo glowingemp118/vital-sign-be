@@ -56,7 +56,12 @@ export const finalRes = ({ pageno = 1, limit, data = [] }) => {
   };
 };
 
-export const userPipeline = () => {
+export const userPipeline = (cond = {}) => {
+  const match = {
+    $match: {
+      ...cond,
+    },
+  };
   return [
     {
       $lookup: {
@@ -65,6 +70,7 @@ export const userPipeline = () => {
         foreignField: '_id',
         as: 'user',
         pipeline: [
+          match,
           {
             $project: {
               name: 1,
@@ -84,7 +90,6 @@ export const userPipeline = () => {
     {
       $unwind: {
         path: '$user',
-        preserveNullAndEmptyArrays: true,
       },
     },
   ];
@@ -179,7 +184,6 @@ export const drPipeline = () => {
     {
       $unwind: {
         path: '$doctor',
-        preserveNullAndEmptyArrays: true,
       },
     },
   ];

@@ -27,11 +27,11 @@ export class DoctorService {
   async getDoctors(req: any) {
     try {
       const { user } = req;
-      const { pageno, limit, search, filter = {} } = req.query;
+      const { pageno, limit, search, filter = {}, status } = req.query;
       const isAdmin = user?.user_type === UserType.Admin;
       const pipeline: any[] = [
         { $match: { ...filter } },
-        ...userPipeline(),
+        ...userPipeline(status ? { status } : {}),
         ...specialitiesPipeline(),
         ...reviewsRating('user._id'),
         ...(isAdmin
@@ -66,7 +66,8 @@ export class DoctorService {
         const [countResult] = await this.userModel.aggregate(
           statusCounts(['active', 'inactive', 'blocked'], {
             user_type: UserType.Doctor,
-            is_verified: true,
+
+            // is_verified: true,
           }),
         );
         count = countResult;

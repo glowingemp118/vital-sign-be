@@ -268,20 +268,23 @@ export class AppointmentsService {
 
       const projectFields = {
         'user.hashes': 0,
+        'doctor.user.hashes': 0,
       };
       if (search) {
-        pipeline.push(...searchPipeline(search, queryFields), {
-          $project: projectFields,
-        });
+        pipeline.push(...searchPipeline(search, queryFields));
       }
+      pipeline.push({ $project: projectFields });
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.appointmentModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
       let count = {};
+      const { status: s, ...restFilter } = obj;
       if (isAdmin || user_type == UserType.Doctor) {
         const [countResult] = await this.appointmentModel.aggregate(
-          statusCounts(['pending', 'confirmed', 'cancelled', 'completed']),
-          !isAdmin && { $match: { doctor: new mongoose.Types.ObjectId(_id) } },
+          statusCounts(
+            ['pending', 'confirmed', 'cancelled', 'completed'],
+            restFilter,
+          ),
         );
         count = countResult;
       }
