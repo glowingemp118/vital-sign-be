@@ -1,6 +1,6 @@
-import e from 'express';
 import { processValue } from './encrptdecrpt';
 import { config } from 'dotenv';
+import mongoose from 'mongoose';
 config();
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
 
@@ -495,6 +495,39 @@ export const countStat = (
         [`${model}`]: {
           $ifNull: [{ $arrayElemAt: [`$${model}Count.count`, 0] }, 0],
         },
+      },
+    },
+  ];
+};
+
+export const countAlerts = () => {
+  return [
+    {
+      $lookup: {
+        from: 'alerts',
+        let: { userId: `$_id` },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$user', '$$userId'] },
+            },
+          },
+        ],
+        as: 'userAlerts',
+      },
+    },
+    {
+      $addFields: {
+        alerts: {
+          $size: {
+            $ifNull: [{ $arrayElemAt: ['$userAlerts.alerts', 0] }, []],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        userAlerts: 0,
       },
     },
   ];

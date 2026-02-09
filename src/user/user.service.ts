@@ -21,6 +21,7 @@ import { Speciality } from '../admin/schemas/speciality.schema';
 import { Device, DevicesDocument } from './schemas/devices.schema';
 import { processObject, processValue } from '../utils/encrptdecrpt';
 import {
+  countAlerts,
   countStat,
   finalRes,
   paginationPipeline,
@@ -430,6 +431,7 @@ export class UserService {
           },
         ]),
         ...countStat('_id', 'user', 'records'),
+        ...countAlerts(),
       ];
       let obj: any = {
         ...filter,
@@ -488,6 +490,7 @@ export class UserService {
           hashes: 1,
           appointments: 1,
           records: 1,
+          alerts: 1,
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });
