@@ -217,7 +217,7 @@ export class AdminService {
       const result = finalRes({ pageno, limit, data });
       return { ...result, meta: { ...result?.meta, ...counts } };
     } catch (err) {
-      return finalRes({ pageno, limit, data: [] });
+      throw new NotFoundException('No requests found');
     }
   }
 
