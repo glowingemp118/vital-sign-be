@@ -35,7 +35,7 @@ export class Faq {
 export class ContactSupport {
   @Prop({ required: true })
   email: string;
-  
+
   @Prop({ required: true })
   name: string;
 
@@ -48,7 +48,17 @@ export class ContactSupport {
   @Prop({ type: [String], default: [] })
   replies: string[];
 
-  @Prop({ required: true, enum: ['open', 'closed', 'pending'], default: 'open' })
+  @Prop({
+    enum: ['contact', 'support'],
+    default: 'support',
+  })
+  type: 'contact' | 'support';
+
+  @Prop({
+    required: true,
+    enum: ['open', 'closed'],
+    default: 'open',
+  })
   status: string;
 
   @Prop({ type: Date, default: Date.now })
@@ -56,7 +66,8 @@ export class ContactSupport {
 }
 
 export type ContactSupportDocument = ContactSupport & Document;
-export const ContactSupportSchema = SchemaFactory.createForClass(ContactSupport);
+export const ContactSupportSchema =
+  SchemaFactory.createForClass(ContactSupport);
 
 export type SettingsDocument = Settings & Document;
 export const SettingsSchema = SchemaFactory.createForClass(Settings);

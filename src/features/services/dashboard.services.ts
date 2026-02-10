@@ -67,10 +67,22 @@ export class DashboardService {
         graphData,
       };
       if (!isDoctor) {
-        const contactSupportCount =
-          await this.contactSupportModel.countDocuments({});
+        const contactSupport = await this.contactSupportModel.aggregate([
+          {
+            $group: {
+              _id: null,
+              support: {
+                $sum: { $cond: [{ $eq: ['$type', 'support'] }, 1, 0] },
+              },
+              contact: {
+                $sum: { $cond: [{ $eq: ['$type', 'contact'] }, 1, 0] },
+              },
+            },
+          },
+        ]);
         result['doctors'] = doctorCount;
-        result['contactSupports'] = contactSupportCount;
+        result['contact'] = contactSupport[0]?.contact || 0;
+        result['support'] = contactSupport[0]?.support || 0;
       }
 
       return result;

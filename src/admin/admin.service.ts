@@ -18,7 +18,7 @@ import { Speciality, SpecialityDocument } from './schemas/speciality.schema';
 import { User, UserDocument } from '../user/schemas/user.schema';
 import * as bcrypt from 'bcrypt';
 import { generateToken } from '../guards/auth.guard';
-import { finalRes, paginationPipeline } from '../utils/dbUtils';
+import { finalRes, paginationPipeline, statusCounts } from '../utils/dbUtils';
 import { UserType } from '../user/dto/user.dto';
 import { Doctor, DoctorDocument } from '../user/schemas/doctor.schema';
 import { processObject } from '../utils/encrptdecrpt';
@@ -194,7 +194,7 @@ export class AdminService {
 
   // Get all requests
   async getRequests(query: any) {
-    const { pageno, limit, search } = query;
+    const { pageno, limit, search, type = 'support' } = query;
     let obj: any = {};
     try {
       if (search) {
@@ -202,11 +202,17 @@ export class AdminService {
         obj['$or'] = [{ email: { $regex: search, $options: 'i' } }];
         obj['$or'] = [{ name: { $regex: search, $options: 'i' } }];
       }
+      if (type) {
+        obj.type = type;
+      }
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.contactSupportModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
+      const [counts] = await this.contactSupportModel.aggregate(
+        statusCounts(['open', 'closed']),
+      );
       const result = finalRes({ pageno, limit, data });
-      return result;
+      return { ...result, meta: { ...result?.meta, ...counts } };
     } catch (err) {
       return finalRes({ pageno, limit, data: [] });
     }
