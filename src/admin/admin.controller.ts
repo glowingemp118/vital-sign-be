@@ -185,15 +185,15 @@ export class AdminController {
     return this.adminService.addDoctor(body);
   }
 
-  @Put('doctor/:id')
+  @Put('user/:id')
   @Access(UserType.Admin)
-  async updateDoctor(
+  async updateUser(
     @Param('id') id: string,
     @Body()
     body: {
       status?: string;
     },
   ) {
-    return this.adminService.updateDoctorStatus(id, body.status);
+    return this.adminService.updateUserStatus(id, body.status);
   }
 }

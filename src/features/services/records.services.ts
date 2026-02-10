@@ -217,6 +217,7 @@ export class RecordService {
     // let timezone = user?.timezone || 'UTC'; // Fixed typo from 'timzone' to 'timezone'
 
     const { startDate, now } = this.getDateFilter(from, to, timeFilter);
+
     // Build query
     const match: any = {
       ...filter,
@@ -243,7 +244,7 @@ export class RecordService {
     dvitals.forEach((vital) => {
       if (!result.some((r) => r?.vital.key === vital?.key)) {
         result.push({
-          recorded_at: new Date(),
+          recorded_at: from && to ? new Date(to) : new Date(),
           vital,
           value: '0',
           status: 'normal',
@@ -310,8 +311,7 @@ export class RecordService {
 
   async homeRecords(req: any): Promise<any> {
     const user = req.user;
-    const { time, from, to } = req.query || {};
-    // Get latest home vitals, sorted by homeVitals order
+    let { time, from, to } = req.query || {};
     const homeResRaw = await this.vitalRecords({
       query: { home: 'true', time },
       user,
@@ -520,7 +520,7 @@ export class RecordService {
         query: { ...filter },
         user,
       });
-      if (date && vital) {
+      if (date || vital) {
         const homeRes = this.homeVitals
           .map((key) => homeResRaw.find((rec: any) => rec.vital?.key === key))
           .filter(Boolean);

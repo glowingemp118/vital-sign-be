@@ -212,7 +212,7 @@ export class AdminService {
     }
   }
 
-  // Doctor
+  // User
 
   async addDoctor(body: {
     name: string;
@@ -264,21 +264,21 @@ export class AdminService {
     return { ...user };
   }
 
-  async updateDoctorStatus(userId: string, status: string) {
+  async updateUserStatus(userId: string, status: string) {
     const user = await this.userModel.findOne({
       _id: new mongoose.Types.ObjectId(userId),
       user_type: UserType.Doctor,
     });
 
     if (!user) {
-      throw new NotFoundException('Doctor not found');
+      throw new NotFoundException('User not found');
     }
 
     user.status = status;
     await user.save();
 
     return {
-      message: 'Doctor status updated successfully',
+      message: 'User status updated successfully',
       status: user.status,
     };
   }

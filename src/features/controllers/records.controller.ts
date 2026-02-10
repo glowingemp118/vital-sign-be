@@ -86,7 +86,8 @@ export class RecordController {
   @ApiBearerAuth()
   getUserRecords(@Request() req) {
     const user = { _id: req.params.userId };
-    return this.recordService.homeRecords({ user, fetchUser: true });
+    const query = req.query || {};
+    return this.recordService.homeRecords({ user, fetchUser: true, query });
   }
   @Get('/user/:userId/:key')
   @ApiBearerAuth()
