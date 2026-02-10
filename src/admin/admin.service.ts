@@ -194,7 +194,7 @@ export class AdminService {
 
   // Get all requests
   async getRequests(query: any) {
-    const { pageno, limit, search, type = 'support' } = query;
+    const { pageno, limit, search, type = 'support', status = 'all' } = query;
     let obj: any = {};
     try {
       if (search) {
@@ -204,6 +204,9 @@ export class AdminService {
       }
       if (type) {
         obj.type = type;
+      }
+      if (status !== 'all') {
+        obj.status = status;
       }
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination

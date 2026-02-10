@@ -117,7 +117,7 @@ export class AdminController {
     return this.adminService.deleteRequest(id);
   }
 
-  @Get('support')
+  @Get('contact-support')
   @Access(UserType.Admin)
   async getRequests(@Query() query: any) {
     return this.adminService.getRequests({ ...query });
