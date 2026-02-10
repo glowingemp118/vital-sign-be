@@ -7,6 +7,7 @@ import { User } from 'src/user/schemas/user.schema';
 import { ContactSupport } from 'src/admin/schemas/admin.schema';
 import { UserType } from 'src/user/dto/user.dto';
 import { statusCounts } from 'src/utils/dbUtils';
+import { Message } from 'src/chat/schemas/message.schema';
 
 @Injectable()
 export class DashboardService {
@@ -15,6 +16,7 @@ export class DashboardService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(ContactSupport.name)
     private contactSupportModel: Model<ContactSupport>,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
   async getDashboardStats(req: any): Promise<any> {
     try {
@@ -51,8 +53,13 @@ export class DashboardService {
         ),
       );
       const graphData = await this.getAppointmentsGraphData(year, appfilter);
+      const unReadMessages = await this.messageModel.countDocuments({
+        objectId: user._id,
+        readBy: { $nin: [user._id] },
+      });
       const result = {
         patients: patientCount,
+        unReadMessages,
         appointments: {
           ...countAppointments,
         },

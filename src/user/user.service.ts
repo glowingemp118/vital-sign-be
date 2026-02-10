@@ -503,6 +503,7 @@ export class UserService {
       const [count] = await this.userModel.aggregate(
         statusCounts(['active', 'inactive', 'blocked', 'deleted'], {
           user_type,
+          ...(dr ? { _id: { $in: obj._id.$in } } : {}),
         }),
       );
       const fres = {

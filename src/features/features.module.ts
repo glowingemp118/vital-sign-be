@@ -29,6 +29,7 @@ import {
   ContactSupportSchema,
 } from 'src/admin/schemas/admin.schema';
 import { Alert, AlertSchema } from './schemas/alert.schema';
+import { Message, MessageSchema } from 'src/chat/schemas/message.schema';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { Alert, AlertSchema } from './schemas/alert.schema';
       { name: User.name, schema: UserSchema },
       { name: ContactSupport.name, schema: ContactSupportSchema },
       { name: Alert.name, schema: AlertSchema },
+      { name: Message.name, schema: MessageSchema },
     ]),
   ],
   controllers: [
