@@ -212,7 +212,7 @@ export class AdminService {
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.contactSupportModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const [counts] = await this.contactSupportModel.aggregate(
-        statusCounts(['open', 'closed']),
+        statusCounts(['open', 'closed'], type ? { type } : {}),
       );
       const result = finalRes({ pageno, limit, data });
       return { ...result, meta: { ...result?.meta, ...counts } };
