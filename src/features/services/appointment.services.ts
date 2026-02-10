@@ -181,7 +181,7 @@ export class AppointmentsService {
       });
       if (
         slots.length == 0 ||
-        !slots?.some((v) => v.start == startTime && v.end == endTime)
+        slots?.some((v) => v.start == startTime || v.end == endTime)
       ) {
         throw new Error('Invalid slot or already booked');
       }
