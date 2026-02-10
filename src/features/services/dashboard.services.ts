@@ -22,6 +22,7 @@ export class DashboardService {
     try {
       const { user } = req;
       let { year, filter = {} } = req.query || {};
+      year = parseInt(year) || new Date().getFullYear();
       const isDoctor = user?.user_type === UserType.Doctor;
       const appfilter: any = {};
       if (isDoctor) {
