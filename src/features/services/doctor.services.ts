@@ -119,13 +119,14 @@ export class DoctorService {
       if (!uid) {
         throw new Error('Doctor ID is required');
       }
-      const { pageno, limit } = req.query;
+      const { pageno = 1, limit = 10 } = req.query;
       const filter = { doctor: uid };
       const pipeline: any[] = [
         { $match: { ...filter } },
         ...userPipeline(),
         sort(),
         { $project: { __v: 0, 'user.hashes': 0 } },
+        paginationPipeline({ pageno, limit }),
       ];
       const data = await this.reviewModel.aggregate(pipeline);
       const result = finalRes({ pageno, limit, data });
