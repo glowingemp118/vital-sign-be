@@ -26,7 +26,7 @@ export class NotificationService {
 
     let obj: any = {
       ...filter,
-      user: new mongoose.Types.ObjectId(user || _id), // Filter by user ID (either from query or authenticated user)
+      user: user || _id, // Filter by user ID (either from query or authenticated user)
     };
     try {
       const pipeline: any[] = [{ $match: obj }, { $sort: { createdAt: -1 } }]; // Match the filter
@@ -68,7 +68,7 @@ export class NotificationService {
   async sendNotification(body: any) {
     try {
       let { userId, title, message, type, object } = body;
-      userId = new mongoose.Types.ObjectId(userId);
+      userId = userId.toString();
       const notification = new this.notificationModel({
         user: userId,
         title,
