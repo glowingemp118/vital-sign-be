@@ -445,6 +445,8 @@ export class UserService {
         });
         if (userIds.length > 0) {
           obj._id = { $in: userIds };
+        } else {
+          obj._id = null; // No patients, so no users
         }
       }
       if (status) {
@@ -491,6 +493,7 @@ export class UserService {
           appointments: 1,
           records: 1,
           alerts: 1,
+          userAlerts: 1,
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });
@@ -503,7 +506,7 @@ export class UserService {
       const [count] = await this.userModel.aggregate(
         statusCounts(['active', 'inactive', 'blocked', 'deleted'], {
           user_type,
-          ...(dr ? { _id: { $in: obj._id.$in } } : {}),
+          ...(dr ? { _id: obj._id } : {}),
         }),
       );
       const fres = {

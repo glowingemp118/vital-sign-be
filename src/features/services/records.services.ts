@@ -459,14 +459,18 @@ export class RecordService {
       let obj: any = {
         ...filter,
       };
+      const isDoctor = req?.user?.user_type === UserType.Doctor;
+      console.log(isDoctor, 'isDoctor');
 
-      if (req?.user?.user_type === UserType.Doctor) {
+      if (isDoctor) {
         const userIds = await this.appointmentModel.distinct('user', {
           doctor: new mongoose.Types.ObjectId(req?.user?._id),
           status: { $ne: 'cancelled' },
         });
         if (userIds.length > 0) {
           obj.user = { $in: userIds };
+        } else {
+          obj.user = null; // No patients, so no records
         }
       }
       if (status) {
@@ -479,7 +483,10 @@ export class RecordService {
       const data = await this.recordModel.aggregate(pipeline);
       const result = finalRes({ pageno, limit, data });
       const [count] = await this.recordModel.aggregate(
-        statusCounts(['normal', 'high', 'low', 'critical']),
+        statusCounts(
+          ['normal', 'high', 'low', 'critical'],
+          isDoctor ? { user: obj.user } : {},
+        ),
       );
       const fres = {
         meta: { ...result.meta, ...count },

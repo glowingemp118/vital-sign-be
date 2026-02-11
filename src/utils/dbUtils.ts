@@ -529,10 +529,5 @@ export const countAlerts = () => {
         },
       },
     },
-    {
-      $project: {
-        userAlerts: 0,
-      },
-    },
   ];
 };
