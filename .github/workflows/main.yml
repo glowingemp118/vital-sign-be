@@ -1,0 +1,44 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "22.x"  # Latest Node.js 22.x version
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Build the application
+        run: |
+          npm run build
+
+      - name: Deploy to EC2
+        env:
+          HOST: ${{ secrets.HOST }}  # EC2 instance DNS
+          USER: ${{ secrets.USER }}
+        run: |
+          echo "${{ secrets.SSH_SECRET_KEY }}" > key.pem
+          chmod 600 key.pem
+
+          # Rsync to the instance
+          rsync -az --no-perms --no-times -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./dist ./handler.js ./package.json $USER@$HOST:/home/ubuntu/vital-signs
+
+          # Connect to EC2 instance and restart application
+          ssh -i key.pem -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
+            cd /home/ubuntu/vital-signs
+            pm2 restart all
+          EOF
