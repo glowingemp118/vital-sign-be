@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
   ExecutionContext,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -36,7 +37,7 @@ export class AuthGuard implements CanActivate {
 
       request['user'] = payload;
     } catch (error) {
-      throw new UnauthorizedException(error?.message);
+      throw new ForbiddenException(error?.message);
     }
     return true;
   }
@@ -60,11 +61,11 @@ export async function validateRefreshToken(token: string): Promise<any> {
       },
     );
     if (!payload.is_refresh) {
-      throw new UnauthorizedException('Not a refresh token');
+      throw new ForbiddenException('Not a refresh token');
     }
     return payload;
   } catch (error) {
-    throw new UnauthorizedException('Invalid refresh token');
+    throw new ForbiddenException('Invalid refresh token');
   }
 }
 
@@ -73,7 +74,7 @@ export function generateToken(payload: any, onlyAccessToken = false): any {
   const result: any = {
     access_token: {
       token: sign({ _id, email, user_type, is_refresh: false }, JWT_SECRET, {
-        expiresIn: '1h',
+        expiresIn: '1min',
       }),
       expiresIn: Date.now() + 3600000,
     },
