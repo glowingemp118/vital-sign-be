@@ -26,6 +26,11 @@ jobs:
         run: |
           npm run build
 
+      - name: Debugging - Check environment variables
+        run: |
+          echo "HOST: ${{ secrets.HOST }}"
+          echo "USER: ${{ secrets.USER }}"
+
       - name: Deploy to EC2
         env:
           HOST: ${{ secrets.HOST }}  # EC2 instance DNS
@@ -34,8 +39,12 @@ jobs:
           echo "${{ secrets.SSH_SECRET_KEY }}" > key.pem
           chmod 600 key.pem
 
-          # Rsync to the instance
-          rsync -az --no-perms --no-times -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./dist ./handler.js ./package.json $USER@$HOST:/home/ubuntu/vital-signs
+          # Debugging - Check the value of HOST and USER
+          echo "Deploying to host: $HOST"
+          echo "Using user: $USER"
+
+          # Rsync to the instance (adjust if necessary)
+          rsync -az --no-perms --no-times -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./lib ./package.json $USER@$HOST:/home/ubuntu/vital-signs
 
           # Connect to EC2 instance and restart application
           ssh -i key.pem -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
