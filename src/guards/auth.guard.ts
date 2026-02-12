@@ -74,9 +74,9 @@ export function generateToken(payload: any, onlyAccessToken = false): any {
   const result: any = {
     access_token: {
       token: sign({ _id, email, user_type, is_refresh: false }, JWT_SECRET, {
-        expiresIn: '1min',
+        expiresIn: '1h',
       }),
-      expiresIn: Date.now() + 60000,
+      expiresIn: Date.now() + 3600000,
     },
   };
   if (!onlyAccessToken) {
