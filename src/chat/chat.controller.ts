@@ -31,18 +31,16 @@ export class ChatController {
     return this.chatService.sendDirectMessage(req, otherUserId);
   }
 
-  // 🔹 Delete entire chat with a user
-  @Delete(':otherUserId')
-  deleteChat(@Param('otherUserId') otherUserId: string, @Req() req) {
-    return this.chatService.deleteChat(req.user, otherUserId);
-  }
-
   // 🔹 Delete a specific message
   @Delete('message/:messageId')
   deleteMessage(@Param('messageId') messageId: string, @Req() req) {
     return this.chatService.deleteMessage(req, messageId);
   }
-
+  // 🔹 Delete entire chat with a user
+  @Delete(':otherUserId')
+  deleteChat(@Param('otherUserId') otherUserId: string, @Req() req) {
+    return this.chatService.deleteChat(req, otherUserId);
+  }
   // 🔹 Mark all messages as read
   @Put('message/read/:otherUserId')
   markAllMessagesAsRead(@Param('otherUserId') otherUserId: string, @Req() req) {

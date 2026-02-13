@@ -252,6 +252,11 @@ export class AppointmentsService {
           obj.doctor = new mongoose.Types.ObjectId(dr);
         }
       }
+      const now = new Date();
+      await this.appointmentModel.updateMany(
+        { ...obj, status: 'pending', date: { $lt: now } },
+        { status: 'expired' },
+      );
       if (status && status !== 'all') {
         obj.status = status;
       }
@@ -282,7 +287,7 @@ export class AppointmentsService {
       if (isAdmin || user_type == UserType.Doctor) {
         const [countResult] = await this.appointmentModel.aggregate(
           statusCounts(
-            ['pending', 'confirmed', 'cancelled', 'completed'],
+            ['pending', 'confirmed', 'cancelled', 'expired', 'completed'],
             restFilter,
           ),
         );
@@ -299,7 +304,10 @@ export class AppointmentsService {
         }),
       };
     } catch (err) {
-      return finalRes({ pageno, limit, data: [] });
+      console.error('Error fetching appointments:', err);
+      throw new BadRequestException(
+        err?.message || 'Error fetching appointments',
+      );
     }
   }
 

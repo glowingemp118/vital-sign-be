@@ -30,7 +30,7 @@ export class Appointment {
   date: Date;
 
   @Prop({
-    enum: ['pending', 'confirmed', 'cancelled', 'completed'],
+    enum: ['pending', 'expired', 'confirmed', 'cancelled', 'completed'],
     default: 'pending',
   })
   status: string;

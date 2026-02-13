@@ -460,7 +460,6 @@ export class RecordService {
         ...filter,
       };
       const isDoctor = req?.user?.user_type === UserType.Doctor;
-      console.log(isDoctor, 'isDoctor');
 
       if (isDoctor) {
         const userIds = await this.appointmentModel.distinct('user', {

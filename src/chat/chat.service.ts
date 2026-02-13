@@ -217,7 +217,7 @@ export class ChatService {
   }
 
   async deleteChat(req: any, otherUserId: string) {
-    const userId = req.user._id;
+    const userId = req?.user?._id;
 
     try {
       const query = {
