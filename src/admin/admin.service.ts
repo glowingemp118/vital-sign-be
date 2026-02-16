@@ -127,6 +127,7 @@ export class AdminService {
     name: string;
     subject: string;
     message: string;
+    type?: 'contact' | 'support';
   }) {
     // Check for existing request with same subject and email, and status not 'closed'
     const existingRequest = await this.contactSupportModel.findOne({
@@ -149,8 +150,7 @@ export class AdminService {
         subject: data.subject,
         message: data.message,
         replies: ['User: ' + data.message],
-        status: 'pending',
-        updatedAt: new Date(),
+        type: data.type || 'support',
       });
       return request;
     }

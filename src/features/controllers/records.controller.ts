@@ -85,14 +85,14 @@ export class RecordController {
   @Get('/user/:userId')
   @ApiBearerAuth()
   getUserRecords(@Request() req) {
-    const user = { _id: req.params.userId };
+    const user = { _id: req.params.userId, timezone: req.user?.timezone };
     const query = req.query || {};
     return this.recordService.homeRecords({ user, fetchUser: true, query });
   }
   @Get('/user/:userId/:key')
   @ApiBearerAuth()
   getUserKeyRecords(@Request() req) {
-    const user = { _id: req.params.userId };
+    const user = { _id: req.params.userId, timezone: req.user?.timezone };
     const key = req.params.key;
     return this.recordService.singleVitalRecord({
       user,

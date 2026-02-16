@@ -47,7 +47,7 @@ export class UserService {
   // Create user and save it to the database
   async createUser(dto: CreateUserDto): Promise<any> {
     try {
-      let { name, email, phone, password, user_type } = dto;
+      let { name, email, phone, password, user_type, timezone } = dto;
       email = email ? email.toLowerCase().trim() : ''; // Ensure email is defined
       if (user_type === UserType.Doctor) {
         validateParams(this.doctorModel.schema, dto, {
@@ -80,6 +80,7 @@ export class UserService {
         password: password,
         otp: this.generateOtp(),
         roles: [user_type],
+        timezone: timezone || 'UTC',
         ...(isUser ? { ...encryted_obj, hashes: { ...hash_obj } } : {}),
       };
       const user = isExistingUser
@@ -154,6 +155,12 @@ export class UserService {
           .findOne({ user: user._id })
           .populate('specialties');
         user.doctor = doctor;
+      }
+      if (user?.timezone !== signInDto.timezone) {
+        user.timezone = signInDto.timezone;
+        await this.userModel.findByIdAndUpdate(user._id, {
+          timezone: signInDto.timezone,
+        });
       }
       return {
         user: modifiedUser(user),

@@ -70,20 +70,28 @@ export async function validateRefreshToken(token: string): Promise<any> {
 }
 
 export function generateToken(payload: any, onlyAccessToken = false): any {
-  const { _id, email, user_type } = payload;
+  const { _id, email, user_type, timezone } = payload;
   const result: any = {
     access_token: {
-      token: sign({ _id, email, user_type, is_refresh: false }, JWT_SECRET, {
-        expiresIn: '1h',
-      }),
+      token: sign(
+        { _id, email, user_type, timezone, is_refresh: false },
+        JWT_SECRET,
+        {
+          expiresIn: '1h',
+        },
+      ),
       expiresIn: Date.now() + 3600000,
     },
   };
   if (!onlyAccessToken) {
     result.refresh_token = {
-      token: sign({ _id, email, user_type, is_refresh: true }, JWT_SECRET, {
-        expiresIn: '1d',
-      }),
+      token: sign(
+        { _id, email, user_type, timezone, is_refresh: true },
+        JWT_SECRET,
+        {
+          expiresIn: '1d',
+        },
+      ),
       expiresIn: Date.now() + 86400000,
     };
   }
