@@ -274,9 +274,10 @@ export class AdminService {
   }
 
   async updateUserStatus(userId: string, status: string) {
+
     const user = await this.userModel.findOne({
       _id: new mongoose.Types.ObjectId(userId),
-      user_type: UserType.Doctor,
+      // user_type: UserType.Doctor,
     });
 
     if (!user) {

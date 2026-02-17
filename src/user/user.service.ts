@@ -433,9 +433,9 @@ export class UserService {
 
       const stats = [
         ...countStat('_id', 'user', 'appointments', [
-          {
-            $ne: ['$status', 'cancelled'],
-          },
+          // {
+          //   $ne: ['$status', 'cancelled'],
+          // },
         ]),
         ...countStat('_id', 'user', 'records'),
         ...countAlerts(),
