@@ -23,7 +23,7 @@ export class DoctorService {
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(Review.name) private reviewModel: Model<Review>,
     @InjectModel(User.name) private userModel: Model<User>,
-  ) {}
+  ) { }
   async getDoctors(req: any) {
     try {
       const { user } = req;
@@ -36,10 +36,10 @@ export class DoctorService {
         ...reviewsRating('user._id'),
         ...(isAdmin
           ? countStat('user._id', 'doctor', 'appointments', [
-              {
-                $ne: ['$status', 'cancelled'],
-              },
-            ])
+            {
+              $ne: ['$status', 'cancelled'],
+            },
+          ])
           : []),
         sort(),
         {

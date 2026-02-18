@@ -26,7 +26,7 @@ export class RecordService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
-  ) {}
+  ) { }
   homeVitals = [
     'bloodPressure',
     'heartRate',
@@ -330,7 +330,9 @@ export class RecordService {
 
   async homeRecords(req: any): Promise<any> {
     const user = req.user;
+
     let { time, from, to } = req.query || {};
+    
     const homeResRaw = await this.vitalRecords({
       query: { home: 'true', time },
       user,
