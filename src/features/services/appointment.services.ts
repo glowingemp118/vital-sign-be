@@ -47,9 +47,10 @@ export class AppointmentsService {
       }
 
       // Adjust date for user's timezone
-      const requestedDate = moment.tz(date, userTimezone); // Convert date to user's timezone
-      const requestedDay = requestedDate.format('dddd'); // Get the day of the week (e.g., "Monday")
-
+      const requestedDate = moment.tz(date, userTimezone).format('YYYY-MM-DD'); // Convert date to user's timezone
+      const requestedDay = moment
+        .tz(requestedDate, userTimezone)
+        .format('dddd'); // Get the day of the week (e.g., "Monday")
       // Get the doctor's working hours for the specific day
       const workingDay = doctor.timing.find(
         (item) => item.day === requestedDay,
@@ -106,6 +107,9 @@ export class AppointmentsService {
         date: date,
         status: { $in: ['pending', 'confirmed'] },
       });
+
+      // console.log(bookedAppointments, 'booked');
+
       const availableSlots = [];
 
       // Iterate through each time slot within the doctor's working hours
@@ -123,12 +127,16 @@ export class AppointmentsService {
 
           const currentSlotStart = currentTime.format('HH:mm'); // Format current time to 'HH:mm'
           const currentSlotEnd = slotEndTime.format('HH:mm');
+          const appointmentDate = moment
+            .tz(appointment.date, userTimezone)
+            .format('YYYY-MM-DD'); // Convert appointment date to user's timezone and format
 
           // Return true if the current slot overlaps with any booked appointments
+
           return (
             currentSlotStart === appointmentStartTime && // Compare start time
             currentSlotEnd === appointmentEndTime &&
-            appointment.date.toISOString() === requestedDate.toISOString() // Ensure the date matches
+            appointmentDate === requestedDate // Ensure the date matches
           );
         });
 
@@ -263,7 +271,7 @@ export class AppointmentsService {
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       pipeline.push(...appointmentPipeline());
       if (order) {
-        pipeline.push({ $sort: { date: -1 } });
+        pipeline.push({ $sort: { date: 1 } });
       }
       const queryFields = {
         'user.hashes': ['email', 'phone', 'name'],
