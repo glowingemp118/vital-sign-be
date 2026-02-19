@@ -102,7 +102,7 @@ export class AppointmentsService {
       // Get all appointments for the doctor on this date
       const bookedAppointments = await this.appointmentModel.find({
         doctor: new mongoose.Types.ObjectId(drId),
-        user: new mongoose.Types.ObjectId(user?._id),
+        // user: new mongoose.Types.ObjectId(user?._id),
         date: date,
         status: { $in: ['pending', 'confirmed'] },
       });
@@ -232,7 +232,7 @@ export class AppointmentsService {
       limit,
       search,
       status,
-      order,
+      order = 'sort',
       patience,
       dr,
       filter = {},
@@ -262,8 +262,8 @@ export class AppointmentsService {
       }
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       pipeline.push(...appointmentPipeline());
-      if (order && order == 'latest') {
-        pipeline.push(sort());
+      if (order) {
+        pipeline.push({ $sort: { date: -1 } });
       }
       const queryFields = {
         'user.hashes': ['email', 'phone', 'name'],
@@ -400,16 +400,14 @@ export class AppointmentsService {
           'Appointment not found or you do not have permission to view this appointment',
         );
       }
-
-      if (isAdmin) {
-        const review = await this.reviewModel
-          .findOne({
-            appointment: new mongoose.Types.ObjectId(appointmentId),
-          })
-          .lean();
+      const review = await this.reviewModel
+        .findOne({
+          appointment: new mongoose.Types.ObjectId(appointmentId),
+        })
+        .lean();
+      if (review) {
         appointment.review = review;
       }
-
       return appointment;
     } catch (error) {
       throw new BadRequestException(error?.message);
