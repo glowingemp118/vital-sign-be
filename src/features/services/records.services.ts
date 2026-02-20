@@ -50,8 +50,10 @@ export class RecordService {
       const user = uid;
       // Use moment-timezone for date parsing
       const timezone = req?.user?.timezone || 'UTC';
-      recorded_at = moment.tz(recorded_at, timezone).toDate();
-      console.log(`Recorded at: ${recorded_at} in timezone: ${timezone}`);
+      const [date, time] = recorded_at?.toString().split('T') || ['', ''];
+      const dateTime = date + 'T' + time?.slice(0, 5);
+      recorded_at = new Date(dateTime);
+
       // throw new Error('Test error'); // Remove this line after testing
       vital = new mongoose.Types.ObjectId(vital);
 
@@ -164,37 +166,52 @@ export class RecordService {
     const homeRes = await this.homeRecords({ user });
     return homeRes;
   }
+
   getDateFilter(
     from: string,
     to: string,
     timeFilter: string,
     timezone: string = 'UTC',
   ) {
-    // console.log(timezone, 'timezone');
+    let now = moment()
+      .tz(timezone)
+      .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // Set 'now' to the current time in the user timezone
+    let startDate = moment()
+      .tz(timezone)
+      .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // Default start date at midnight in user timezone
 
-    let now = moment().tz(timezone); // Set 'now' to the current time in the user timezone
-    let startDate = moment().tz(timezone); // Default start date in user timezone
     if (from && to) {
       const fromDate = moment(from)
         .tz(timezone, true)
-        .set({ hour: 23, minute: 59, second: 0, millisecond: 0 });
+        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // Start of the 'from' day
       startDate = fromDate;
 
       const toDate = moment(to)
         .tz(timezone, true)
-        .set({ hour: 23, minute: 59, second: 59, millisecond: 999 });
+        .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // End of the 'to' day
       now = toDate;
     } else if (timeFilter === '24hrs') {
-      startDate = moment().tz(timezone); // 24hrs filter uses the current time
+      startDate = moment()
+        .tz(timezone)
+        .subtract(1, 'days')
+        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // 24hrs filter uses the previous day at midnight
+      now = moment()
+        .tz(timezone)
+        .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // Current time at 23:59:59.999
     } else if (timeFilter === '7days') {
-      startDate = moment().tz(timezone).subtract(7, 'days');
+      startDate = moment()
+        .tz(timezone)
+        .subtract(7, 'days')
+        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
     } else if (timeFilter === '30days') {
-      startDate = moment().tz(timezone).subtract(30, 'days');
-    } else {
-      startDate = moment(0).tz(timezone); // all time, set to epoch time
+      startDate = moment()
+        .tz(timezone)
+        .subtract(30, 'days')
+        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
     }
 
-    return { startDate: startDate.toDate(), now: now.toDate() }; // Convert to Date objects before returning
+    // Ensure that both startDate and now are JavaScript Date objects before returning
+    return { startDate: startDate.toDate(), now: now.toDate() };
   }
   async vitalRecords(req: any): Promise<any> {
     const { query, user } = req;
@@ -374,6 +391,9 @@ export class RecordService {
       time || '7days',
       user?.timezone,
     );
+
+    console.log(startDate, now, 'inhome');
+
     const alert = await this.alertModel
       .findOne({
         user: new mongoose.Types.ObjectId(user._id),

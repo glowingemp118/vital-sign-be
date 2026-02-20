@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose'; // Assuming you have a Doctor model
-import * as moment from 'moment-timezone'; // For handling timezones
+import moment from 'moment-timezone'; // For handling timezones
 import { Appointment } from '../schemas/appointments.schema';
 import { Doctor } from '../../user/schemas/doctor.schema';
 import { validateParams } from '../../utils/validations';
@@ -248,6 +248,7 @@ export class AppointmentsService {
     const { _id, user_type } = user;
     let obj: any = { ...filter };
     try {
+      const timezone = user?.timezone || 'UTC';
       const isAdmin = user_type == UserType.Admin;
       if (user_type == UserType.User) {
         obj.user = new mongoose.Types.ObjectId(_id);
@@ -260,11 +261,7 @@ export class AppointmentsService {
           obj.doctor = new mongoose.Types.ObjectId(dr);
         }
       }
-      const now = new Date();
-      // await this.appointmentModel.updateMany(
-      //   { ...obj, status: 'pending', date: { $gt: now } },
-      //   { status: 'expired' },
-      // );
+      await this.updateExpiredAppointments(user, obj);
       if (status && status !== 'all') {
         obj.status = status;
       }
@@ -526,5 +523,94 @@ export class AppointmentsService {
     } catch (error) {
       throw new BadRequestException(error?.message);
     }
+  }
+
+  async updateExpiredAppointments(user: any, cond: any) {
+    const userTimezone = user?.timezone || 'UTC';
+    const now = moment.tz(userTimezone); // Current time in user's timezone
+    const todayDate = now.format('YYYY-MM-DD'); // Today's date in 'YYYY-MM-DD' format for the user's timezone
+    // Update the logic for handling string start and end times
+    await this.appointmentModel.updateMany(
+      {
+        ...cond,
+        status: 'pending', // Ensure status is 'pending'
+        date: { $lte: now.toDate() }, // Appointment date is today or earlier
+        $or: [
+          // Expired if the current time is after the appointment's endTime
+          {
+            $expr: {
+              $lt: [
+                { $concat: [todayDate, 'T', '$endTime', ':00.000Z'] },
+                now.toISOString(),
+              ],
+            },
+          },
+          // Appointment is ongoing or expired if it's finished
+          {
+            $expr: {
+              $and: [
+                {
+                  $lte: [
+                    { $concat: [todayDate, 'T', '$startTime', ':00.000Z'] },
+                    now.toISOString(),
+                  ],
+                },
+                {
+                  $gte: [
+                    { $concat: [todayDate, 'T', '$endTime', ':00.000Z'] },
+                    now.toISOString(),
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { $set: { status: 'expired' } }, // Update the status to 'expired'
+    );
+  }
+
+  validateAppointment({ user, date, startTime, endTime }: any) {
+    const now = moment.tz(user?.timezone || 'UTC'); // Current time in user's timezone
+    const appointmentDateTime = moment.tz(
+      date,
+      'YYYY-MM-DD',
+      user?.timezone || 'UTC',
+    ); // Appointment date in user's timezone
+
+    // Create moment objects for start and end times
+    const startDateTime = moment.tz(
+      appointmentDateTime.format('YYYY-MM-DD') + 'T' + startTime,
+      user?.timezone || 'UTC',
+    );
+    const endDateTime = moment.tz(
+      appointmentDateTime.format('YYYY-MM-DD') + 'T' + endTime,
+      user?.timezone || 'UTC',
+    );
+
+    // Check if the appointment date, start, and end are today or in the future
+    if (now.isAfter(appointmentDateTime)) {
+      return {
+        valid: false,
+        message: 'Appointment date must be today or in the future.',
+      };
+    }
+
+    if (now.isAfter(startDateTime)) {
+      return {
+        valid: false,
+        message: 'Appointment start time must be in the future.',
+      };
+    }
+
+    if (now.isAfter(endDateTime)) {
+      return {
+        valid: false,
+        message: 'Appointment end time must be in the future.',
+      };
+    }
+
+    // If all checks pass
+    return { valid: true, message: 'Appointment is valid.' };
   }
 }

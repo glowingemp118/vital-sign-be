@@ -49,7 +49,7 @@ export class DashboardService {
 
       const [countAppointments = {}] = await this.appointmentModel.aggregate(
         statusCounts(
-          ['pending', 'confirmed', 'completed', 'cancelled'],
+          ['pending', 'expired', 'confirmed', 'completed', 'cancelled'],
           appfilter,
         ),
       );
@@ -121,6 +121,9 @@ export class DashboardService {
           pending: {
             $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
           },
+          expired: {
+            $sum: { $cond: [{ $eq: ['$status', 'expired'] }, 1, 0] },
+          },
           confirmed: {
             $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] },
           },
@@ -186,6 +189,7 @@ export class DashboardService {
             confirmed: 0,
             cancelled: 0,
             completed: 0,
+            expired: 0,
           });
         }
       });
