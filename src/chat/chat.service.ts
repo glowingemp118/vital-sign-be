@@ -168,7 +168,7 @@ export class ChatService {
       const localDate = moment(message.createdAt).tz(timezone).format();
       const messageObject = {
         ...message.toObject(),
-        content,
+        content: content,
         timesince: moment(localDate).fromNow(),
       };
       const btasks = async () => {

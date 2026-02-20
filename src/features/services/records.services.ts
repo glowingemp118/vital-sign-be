@@ -26,7 +26,7 @@ export class RecordService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
-  ) { }
+  ) {}
   homeVitals = [
     'bloodPressure',
     'heartRate',
@@ -170,12 +170,10 @@ export class RecordService {
     timeFilter: string,
     timezone: string = 'UTC',
   ) {
-    console.log(timezone, 'timezone');
+    // console.log(timezone, 'timezone');
 
     let now = moment().tz(timezone); // Set 'now' to the current time in the user timezone
     let startDate = moment().tz(timezone); // Default start date in user timezone
-    console.log(now, 'now', startDate, 'startDate');
-
     if (from && to) {
       const fromDate = moment(from)
         .tz(timezone, true)
@@ -332,7 +330,7 @@ export class RecordService {
     const user = req.user;
 
     let { time, from, to } = req.query || {};
-    
+
     const homeResRaw = await this.vitalRecords({
       query: { home: 'true', time },
       user,
