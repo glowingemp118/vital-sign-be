@@ -262,7 +262,7 @@ export class AppointmentsService {
       }
       const now = new Date();
       await this.appointmentModel.updateMany(
-        { ...obj, status: 'pending', date: { $lt: now } },
+        { ...obj, status: 'pending', date: { $gt: now } },
         { status: 'expired' },
       );
       if (status && status !== 'all') {
