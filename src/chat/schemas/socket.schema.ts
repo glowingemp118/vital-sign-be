@@ -58,7 +58,12 @@ SocketConnectionSchema.statics.removeInactiveConnections =
   async function (): Promise<void> {
     const timeMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     try {
-      await this.deleteMany({ lastActive: { $lt: timeMinutesAgo } });
+      const result = await this.deleteMany({
+        lastActive: { $lt: timeMinutesAgo },
+      });
+      console.log(
+        `Cleaned up ${result.deletedCount} inactive socket connections`,
+      );
     } catch (error) {
       console.error('Error cleaning up inactive socket connections:', error);
     }

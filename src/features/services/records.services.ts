@@ -52,7 +52,7 @@ export class RecordService {
       const timezone = req?.user?.timezone || 'UTC';
       recorded_at = moment.tz(recorded_at, timezone).toDate();
       console.log(`Recorded at: ${recorded_at} in timezone: ${timezone}`);
-
+      // throw new Error('Test error'); // Remove this line after testing
       vital = new mongoose.Types.ObjectId(vital);
 
       const vitalDoc = await this.vitalModel.findById(vital).exec();

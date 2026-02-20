@@ -98,4 +98,27 @@ export class SocketService {
       type: 'group',
     });
   }
+
+  private inactiveConnectionInterval: NodeJS.Timeout;
+
+  onModuleInit() {
+    this.inactiveConnectionInterval = setInterval(
+      () => this.removeInactiveConnections(),
+      60000, // 1 minute
+    );
+  }
+
+  onModuleDestroy() {
+    if (this.inactiveConnectionInterval) {
+      clearInterval(this.inactiveConnectionInterval);
+    }
+  }
+
+  private async removeInactiveConnections() {
+    try {
+      await (this.socketConnectionModel as any).removeInactiveConnections();
+    } catch (error) {
+      console.error('Error removing inactive connections:', error);
+    }
+  }
 }
