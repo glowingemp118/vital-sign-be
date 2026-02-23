@@ -189,14 +189,14 @@ export class ChatService {
             messageObject,
           );
         }
-        if (anyDirectConnection) {
+        if (isOnline) {
           const unReadCount = await this.msgModel.countDocuments({
             objectId: receiverId,
             subjectId: userId,
             readBy: { $ne: receiverId },
           });
           this.socketService.emitToSocket(
-            anyDirectConnection.socketId,
+            anyDirectConnection.socketId || directMatch.socketId,
             'chatUpdated',
             {
               message: messageObject,
