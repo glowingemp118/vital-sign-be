@@ -211,7 +211,10 @@ export class AppointmentsService {
       newAppointment.save();
       const sndNotification = async () => {
         try {
-          const msg = `Your appointment ${appointmentId} with Dr. ${doctorExists.user?.name} on ${date} from ${startTime} to ${endTime} has been booked successfully.`;
+          const mdate = moment
+            .tz(date, user?.timezone || 'UTC')
+            .format('YYYY-MM-DD');
+          const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been booked successfully.`;
           const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
           await this.notificationService.sendNotification({
             userId: doctorExists.user?._id,
@@ -362,9 +365,12 @@ export class AppointmentsService {
         try {
           const { appointmentId, date, startTime, endTime } =
             existingAppointment || {};
+          const mdate = moment
+            .tz(date, req?.user?.timezone || 'UTC')
+            .format('YYYY-MM-DD');
           const sendto =
             user_type == UserType.User ? existingAppointment.doctor : _id;
-          const msg = `Your appointment ${appointmentId} on ${date} from ${startTime} to ${endTime} has been ${status} successfully.`;
+          const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been ${status} successfully.`;
           const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
           await this.notificationService.sendNotification({
             userId: sendto,
@@ -380,7 +386,7 @@ export class AppointmentsService {
           );
         }
       };
-      sndNotification();
+      await sndNotification();
       return existingAppointment;
     } catch (error) {
       throw new BadRequestException(error?.message);

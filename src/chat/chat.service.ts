@@ -179,6 +179,9 @@ export class ChatService {
         timesince: localDate.fromNow(),
       };
       const bTasks = async () => {
+        const user = await this.userModel
+          .findById(userId, 'name email image user_type')
+          .lean();
         if (directMatch) {
           this.socketService.emitToSocket(
             directMatch.socketId,
@@ -187,9 +190,6 @@ export class ChatService {
           );
         }
         if (anyDirectConnection) {
-          const user = await this.userModel
-            .findById(userId, 'name email image user_type')
-            .lean();
           const unReadCount = await this.msgModel.countDocuments({
             objectId: receiverId,
             subjectId: userId,
@@ -218,9 +218,10 @@ export class ChatService {
         // 🔹 Otherwise send push notification
         if (!isOnline) {
           const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
+          const name = processValue(user.name, 'decrypt');
           await this.notificationService.sendNotification({
             userId: receiverId,
-            title: `${processObject(receiver.name, 'decrypt')} messaged you`,
+            title: `${name} messaged you`,
             message: content?.substring(0, 100),
             type: msg.type,
             object: {
