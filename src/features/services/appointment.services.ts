@@ -373,14 +373,15 @@ export class AppointmentsService {
           const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been ${status} successfully.`;
           await this.notificationService.sendNotification({});
           await Promise.all(
-            [_id, existingAppointment.doctor].map((userId) =>
-              this.notificationService.sendNotification({
-                userId: userId,
-                title: `Appointment ${status}`,
-                message: msg,
-                type: `appointment_${status}`,
-                object: { appointmentId: existingAppointment._id },
-              }),
+            [existingAppointment.user, existingAppointment.doctor].map(
+              (userId) =>
+                this.notificationService.sendNotification({
+                  userId: userId,
+                  title: `Appointment ${status}`,
+                  message: msg,
+                  type: `appointment_${status}`,
+                  object: { appointmentId: existingAppointment._id },
+                }),
             ),
           );
         } catch (error) {
