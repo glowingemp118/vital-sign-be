@@ -140,7 +140,9 @@ export class ChatService {
 
     try {
       const receiverId = otherUserId;
-      const receiver = await this.userModel.findById(receiverId);
+      const receiver = await this.userModel
+        .findById(receiverId, 'name email image user_type')
+        .lean();
       if (!receiver) {
         throw new Error('Receiver user not found');
       }
@@ -176,44 +178,61 @@ export class ChatService {
         content,
         timesince: localDate.fromNow(),
       };
-
-      // 🔹 If receiver is online → emit via socket
-      if (directMatch) {
-        this.socketService.emitToSocket(
-          directMatch.socketId,
-          'receivedMessage',
-          messageObject,
-        );
-
+      const bTasks = async () => {
+        if (directMatch) {
+          this.socketService.emitToSocket(
+            directMatch.socketId,
+            'receivedMessage',
+            messageObject,
+          );
+        }
         if (anyDirectConnection) {
+          const user = await this.userModel
+            .findById(userId, 'name email image user_type')
+            .lean();
+          const unReadCount = await this.msgModel.countDocuments({
+            objectId: receiverId,
+            subjectId: userId,
+            readBy: { $ne: receiverId },
+          });
           this.socketService.emitToSocket(
             anyDirectConnection.socketId,
             'chatUpdated',
-            messageObject,
+            {
+              message: messageObject,
+              unreadCount: unReadCount,
+              otherUser: {
+                ...processObject(user, 'decrypt'),
+                image: user.image ? process.env.IB_URL + user.image : null,
+                isOnline: true,
+              },
+            },
           );
         }
 
         await this.socketConnectionModel.updateOne(
-          { _id: directMatch._id },
+          { _id: directMatch?._id || anyDirectConnection?._id },
           { lastActive: Date.now() },
         );
-      } else {
+
         // 🔹 Otherwise send push notification
-        const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
-
-        await this.notificationService.sendNotification({
-          userId: receiverId,
-          title: `${processObject(receiver.name, 'decrypt')} messaged you`,
-          message: content?.substring(0, 100),
-          type: msg.type,
-          object: {
-            messageId: message._id,
-            objectId: userId,
-            subjectId: receiverId,
-          },
-        });
-      }
-
+        if (!isOnline) {
+          const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
+          await this.notificationService.sendNotification({
+            userId: receiverId,
+            title: `${processObject(receiver.name, 'decrypt')} messaged you`,
+            message: content?.substring(0, 100),
+            type: msg.type,
+            object: {
+              messageId: message._id,
+              objectId: userId,
+              subjectId: receiverId,
+            },
+          });
+        }
+      };
+      // 🔹 If receiver is online → emit via socket
+      await bTasks();
       return {
         message: 'Message sent successfully',
         data: messageObject,

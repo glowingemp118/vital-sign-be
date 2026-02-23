@@ -21,80 +21,78 @@ export class SocketService {
   ) {}
 
   private server: Server;
+
   setServer(server: Server) {
     this.server = server;
   }
 
-  // 🔥 EMIT TO SPECIFIC SOCKET
+  // 🔥 Emit to specific socket
   emitToSocket(socketId: string, event: string, payload: any) {
-    if (!this.server) return;
+    if (!this.server || !socketId) return;
     this.server.to(socketId).emit(event, payload);
   }
-  // Create or update a connection (direct or group)
+
+  // ✅ Create or update connection (objectId optional)
   async createOrUpdateConnection({
     subjectId,
     objectId,
     socketId,
     type = 'direct',
-  }: CreateOrUpdateConnectionParams) {
+  }: CreateOrUpdateConnectionParams & { objectId?: string }) {
     let chatRoomId: string | undefined;
+
     if (type === 'direct') {
-      // Generate chatRoomId for direct (1-to-1) chat
-      // Use the static method from the schema, not from the model instance
-      // @ts-ignore
+      // if (!objectId)
+      //   throw new Error('objectId is required for direct connection');
+
       chatRoomId = (this.socketConnectionModel as any).generateChatRoomId(
         subjectId,
         objectId,
       );
-    } else if (type === 'group') {
-      // Use groupId as chatRoomId
+    }
+
+    if (type === 'group' && objectId) {
       chatRoomId = objectId;
     }
 
-    const query = { subjectId, objectId, type };
+    const query: any = { subjectId, type };
+    if (objectId) query.objectId = objectId;
+
     const update = {
       socketId,
       lastActive: Date.now(),
-      chatRoomId,
+      ...(chatRoomId && { chatRoomId }),
     };
-    const options = {
+
+    return this.socketConnectionModel.findOneAndUpdate(query, update, {
       upsert: true,
       new: true,
       setDefaultsOnInsert: true,
-    };
-
-    return this.socketConnectionModel.findOneAndUpdate(query, update, options);
+    });
   }
 
-  // Delete a connection by user ID (optionally by group and type)
+  // ✅ Delete connection (objectId optional)
   async deleteConnectionByUserId(
     subjectId: string,
-    objectId: string | null = null,
+    objectId?: string,
     type: ConnectionType = 'direct',
   ) {
-    const query: {
-      subjectId: string;
-      type: ConnectionType;
-      objectId?: string;
-    } = { subjectId, type };
-
+    const query: any = { subjectId, type };
     if (objectId) query.objectId = objectId;
+
     await this.socketConnectionModel.deleteMany(query);
     return { message: 'Connections deleted successfully' };
   }
 
-  // Retrieve connection by chatRoomId
-  async getConnectionByChatRoomId(objectId: string, chatRoomId: string) {
-    return this.socketConnectionModel.findOne({
-      subjectId: objectId, // receiverId
-      chatRoomId,
-    });
+  // Retrieve by chatRoomId
+  async getConnectionByChatRoomId(subjectId: string, chatRoomId: string) {
+    return this.socketConnectionModel.findOne({ subjectId, chatRoomId });
   }
 
-  // Retrieve all connections for a group
-  async getConnectionsByGroupId(objectId: string) {
+  // Retrieve group connections
+  async getConnectionsByGroupId(groupId: string) {
     return this.socketConnectionModel.find({
-      objectId,
+      objectId: groupId,
       type: 'group',
     });
   }
@@ -104,14 +102,12 @@ export class SocketService {
   onModuleInit() {
     this.inactiveConnectionInterval = setInterval(
       () => this.removeInactiveConnections(),
-      60000, // 1 minute
+      60000,
     );
   }
 
   onModuleDestroy() {
-    if (this.inactiveConnectionInterval) {
-      clearInterval(this.inactiveConnectionInterval);
-    }
+    clearInterval(this.inactiveConnectionInterval);
   }
 
   private async removeInactiveConnections() {

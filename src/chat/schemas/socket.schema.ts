@@ -13,7 +13,7 @@ export class SocketConnection {
   @Prop({
     type: Types.ObjectId,
     refPath: 'type',
-    required: true,
+    required: false,
   })
   objectId: Types.ObjectId;
 
@@ -51,7 +51,7 @@ SocketConnectionSchema.statics.generateChatRoomId = function (
   subjectId: Types.ObjectId,
   objectId: Types.ObjectId,
 ): string {
-  return [subjectId.toString(), objectId.toString()].sort().join('_');
+  return [subjectId.toString(), objectId?.toString() || ''].sort().join('_');
 };
 
 SocketConnectionSchema.statics.removeInactiveConnections =
