@@ -208,21 +208,23 @@ export class AppointmentsService {
       });
 
       // Save the appointment to the database
-      newAppointment.save();
+      await newAppointment.save();
       const sndNotification = async () => {
         try {
-          const mdate = moment
-            .tz(date, user?.timezone || 'UTC')
-            .format('YYYY-MM-DD');
+          const mdate = moment.tz(date, user?.timezone || 'UTC').format('ll');
           const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been booked successfully.`;
           const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
-          await this.notificationService.sendNotification({
-            userId: doctorExists.user?._id,
-            title: notify.title,
-            message: msg,
-            type: notify.type,
-            object: { appointmentId: newAppointment._id },
-          });
+          await Promise.all(
+            [user?._id, doctorExists.user?._id].map((userId) =>
+              this.notificationService.sendNotification({
+                userId,
+                title: notify.title,
+                message: msg,
+                type: notify.type,
+                object: { appointmentId: newAppointment._id },
+              }),
+            ),
+          );
         } catch (error) {
           console.error(
             'Error in background task for sending appointment notification:',
@@ -230,7 +232,7 @@ export class AppointmentsService {
           );
         }
       };
-      sndNotification();
+      await sndNotification();
       return newAppointment;
     } catch (error) {
       throw new BadRequestException(error?.message);
@@ -367,18 +369,20 @@ export class AppointmentsService {
             existingAppointment || {};
           const mdate = moment
             .tz(date, req?.user?.timezone || 'UTC')
-            .format('YYYY-MM-DD');
-          const sendto =
-            user_type == UserType.User ? existingAppointment.doctor : _id;
+            .format('ll');
           const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been ${status} successfully.`;
-          const notify = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.APPOINTMENT_NEW];
-          await this.notificationService.sendNotification({
-            userId: sendto,
-            title: notify.title,
-            message: msg,
-            type: notify.type,
-            object: { appointmentId: existingAppointment._id },
-          });
+          await this.notificationService.sendNotification({});
+          await Promise.all(
+            [_id, existingAppointment.doctor].map((userId) =>
+              this.notificationService.sendNotification({
+                userId: userId,
+                title: `Appointment ${status}`,
+                message: msg,
+                type: `appointment_${status}`,
+                object: { appointmentId: existingAppointment._id },
+              }),
+            ),
+          );
         } catch (error) {
           console.error(
             'Error in background task for sending appointment notification:',

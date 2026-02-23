@@ -22,12 +22,15 @@ export class NotificationService {
 
   async getAllNotifications(req: any) {
     const { _id } = req.user;
-    const { pageno, limit, search, filter, user } = req.query || {};
+    const { pageno, limit, type, filter, user } = req.query || {};
 
     let obj: any = {
       ...filter,
       user: user || _id, // Filter by user ID (either from query or authenticated user)
     };
+    if (type) {
+      obj.type = type; // Filter by notification type if provided
+    }
     try {
       const pipeline: any[] = [{ $match: obj }, { $sort: { createdAt: -1 } }]; // Match the filter
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
