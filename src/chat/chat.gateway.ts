@@ -24,34 +24,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(socket: Socket) {
     const { subjectId, objectId, type } = socket.handshake.query;
 
-    // Directly access and ensure subjectId and objectId are treated as strings
     const subjectIdString = Array.isArray(subjectId) ? subjectId[0] : subjectId;
     const objectIdString = Array.isArray(objectId) ? objectId[0] : objectId;
 
-    if (
-      !subjectIdString ||
-      !objectIdString ||
-      !Types.ObjectId.isValid(subjectIdString) ||
-      !Types.ObjectId.isValid(objectIdString)
-    ) {
+    // subjectId is REQUIRED
+    if (!subjectIdString || !Types.ObjectId.isValid(subjectIdString)) {
       const errorMessage =
-        'subjectId and objectId must be provided in query parameters and must be valid ObjectId.';
+        'subjectId must be provided in query parameters and must be a valid ObjectId.';
       socket.emit('error', { message: errorMessage });
       return;
     }
 
-    // Determine connection type
+    // objectId is OPTIONAL — validate only if provided
+    if (objectIdString && !Types.ObjectId.isValid(objectIdString)) {
+      const errorMessage = 'objectId must be a valid ObjectId if provided.';
+      socket.emit('error', { message: errorMessage });
+      return;
+    }
+
     const connectionType = type === 'group' ? 'group' : 'direct';
     console.log(`Connection type determined: ${connectionType}`);
 
-    // Create or update connection
     try {
       const connection = await this.socketService.createOrUpdateConnection({
         subjectId: subjectIdString,
-        objectId: objectIdString,
+        objectId: objectIdString || null, // 👈 optional
         socketId: socket.id,
         type: connectionType,
       });
+
       console.log(`Socket connection created or updated`);
     } catch (error) {
       console.error(`Error creating/updating socket connection:`, error);
@@ -62,7 +63,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleDisconnect(socket: Socket) {
     const { subjectId, objectId, type } = socket.handshake.query;
 
-    // Directly access and ensure subjectId and objectId are treated as strings
     const subjectIdString = Array.isArray(subjectId) ? subjectId[0] : subjectId;
     const objectIdString = Array.isArray(objectId) ? objectId[0] : objectId;
 
@@ -71,9 +71,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.socketService.deleteConnectionByUserId(
       subjectIdString,
-      connectionType === 'group' ? objectIdString : null,
+      connectionType === 'group' ? objectIdString || null : null,
       connectionType,
     );
+
     console.log(
       `User ${subjectIdString} removed from ${connectionType} active connections.`,
     );

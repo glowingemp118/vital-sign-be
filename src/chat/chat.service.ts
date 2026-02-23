@@ -132,88 +132,94 @@ export class ChatService {
       conversationType = 'direct',
     } = req.body;
 
-    if (conversationType === 'group') {
-      // Call method to handle group message (not shown here)
-      return;
+    if (conversationType === 'group') return;
+
+    if (otherUserId === userId) {
+      throw new Error('Cannot send message to yourself');
     }
 
     try {
-      const objectId = otherUserId; // Receiver ID
-
-      if (objectId == userId) {
-        throw new Error('Cannot send message to yourself');
+      const receiverId = otherUserId;
+      const receiver = await this.userModel.findById(receiverId);
+      if (!receiver) {
+        throw new Error('Receiver user not found');
       }
-      const chatRoomId = (this.socketConnectionModel as any).generateChatRoomId(
-        userId,
-        objectId,
-      );
-      const rconnection = await this.socketConnectionModel.findOne({
-        subjectId: objectId,
-        objectId: userId,
-        type: 'direct',
-      });
-      const readBy = rconnection ? [userId, objectId] : [userId];
+      // Fetch both possible receiver connections in parallel
+      const [directMatch, anyDirectConnection] = await Promise.all([
+        this.socketConnectionModel.findOne({
+          subjectId: receiverId,
+          objectId: userId,
+          type: 'direct',
+        }),
+        this.socketConnectionModel.findOne({
+          subjectId: receiverId,
+          type: 'direct',
+        }),
+      ]);
 
-      const message: any = await this.msgModel.create({
+      const isOnline = !!(directMatch || anyDirectConnection);
+
+      const message = await this.msgModel.create({
         subjectId: userId,
-        objectId: objectId,
+        objectId: receiverId,
         messageType,
         content: processValue(content, 'encrypt'),
         mediaUrl,
         type: 'direct',
-        readBy,
-        status: rconnection ? 'DELIVERED' : 'SENT',
+        readBy: directMatch ? [userId, receiverId] : [userId],
+        status: isOnline ? 'DELIVERED' : 'SENT',
       });
 
-      const localDate = moment(message.createdAt).tz(timezone).format();
+      const localDate = moment().tz(timezone);
       const messageObject = {
         ...message.toObject(),
-        content: content,
-        timesince: moment(localDate).fromNow(),
+        content,
+        timesince: localDate.fromNow(),
       };
-      const btasks = async () => {
-        try {
+
+      // 🔹 If receiver is online → emit via socket
+      if (directMatch) {
+        this.socketService.emitToSocket(
+          directMatch.socketId,
+          'receivedMessage',
+          messageObject,
+        );
+
+        if (anyDirectConnection) {
           this.socketService.emitToSocket(
-            rconnection.socketId,
-            'receivedMessage',
-            messageObject,
-          );
-          this.socketService.emitToSocket(
-            rconnection.socketId,
+            anyDirectConnection.socketId,
             'chatUpdated',
             messageObject,
           );
-          await this.socketConnectionModel.updateOne(
-            { _id: rconnection._id },
-            { lastActive: Date.now() },
-          );
-        } catch (error) {
-          console.error('Error in background task for sending message:', error);
         }
-      };
-      if (rconnection) {
-        btasks();
+
+        await this.socketConnectionModel.updateOne(
+          { _id: directMatch._id },
+          { lastActive: Date.now() },
+        );
       } else {
+        // 🔹 Otherwise send push notification
         const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
+
         await this.notificationService.sendNotification({
-          userId: objectId,
-          title: msg.title,
+          userId: receiverId,
+          title: `${processObject(receiver.name, 'decrypt')} messaged you`,
           message: content?.substring(0, 100),
           type: msg.type,
           object: {
             messageId: message._id,
             objectId: userId,
-            subjectId: objectId,
+            subjectId: receiverId,
           },
         });
       }
+
       return {
         message: 'Message sent successfully',
-        data: { ...messageObject, content },
+        data: messageObject,
       };
-      // throw new Error('No active connection found for the recipient');
-    } catch (error) {
-      throw new Error('Error sending direct message: ' + error.message);
+    } catch (error: any) {
+      throw new Error(`Error sending direct message: ${error.message}`);
     }
   }
 
