@@ -88,7 +88,6 @@ export class NotificationService {
       if (!userDevices) {
         throw new Error('User devices not found');
       }
-
       // Step 2: Filter valid device tokens (device_id should not be empty)
       const validTokens = userDevices.devices
         .filter(
@@ -102,6 +101,7 @@ export class NotificationService {
       if (validTokens.length === 0) {
         throw new Error('No valid devices found for user');
       }
+
       // Step 4: Send multicast message using Firebase Admin
       const notifyPayload = {
         notification: {

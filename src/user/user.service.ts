@@ -382,16 +382,20 @@ export class UserService {
       if (!deviceId) {
         throw new Error('Device ID is required for logout');
       }
-      const devicesDoc: any = await this.deviceModel.findOne({ user: userId });
+      const devicesDoc: any = await this.deviceModel.findOne({
+        user: new mongoose.Types.ObjectId(userId),
+      });
       if (devicesDoc) {
         devicesDoc.devices = devicesDoc.devices.filter(
-          (device: any) => device.deviceId !== deviceId,
+          (device: any) => device.device_id !== deviceId,
         );
         await devicesDoc.save();
       }
 
       return { message: 'Logged out successfully' };
     } catch (error) {
+      console.log(error.message);
+
       throw new BadRequestException(error?.message);
     }
   }
