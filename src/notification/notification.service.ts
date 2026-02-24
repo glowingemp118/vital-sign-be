@@ -82,7 +82,7 @@ export class NotificationService {
 
       await notification.save(); // Save the notification to the DB
       const userDevices = await this.deviceModel
-        .findOne({ user: userId })
+        .findOne({ user: new mongoose.Types.ObjectId(userId) })
         .exec();
 
       if (!userDevices) {
@@ -91,7 +91,12 @@ export class NotificationService {
 
       // Step 2: Filter valid device tokens (device_id should not be empty)
       const validTokens = userDevices.devices
-        .filter((device) => device.device_id && device.device_id.trim()) // Remove empty or invalid tokens
+        .filter(
+          (device) =>
+            device.device_id &&
+            device.device_id.trim() &&
+            device.device_id.length > 50,
+        ) // Remove empty or invalid tokens
         .map((device) => device.device_id); // Extract valid device tokens
 
       if (validTokens.length === 0) {

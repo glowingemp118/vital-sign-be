@@ -371,7 +371,6 @@ export class AppointmentsService {
             .tz(date, req?.user?.timezone || 'UTC')
             .format('ll');
           const msg = `Your appointment ${appointmentId} on ${mdate} from ${startTime} to ${endTime} has been ${status} successfully.`;
-          await this.notificationService.sendNotification({});
           await Promise.all(
             [existingAppointment.user, existingAppointment.doctor].map(
               (userId) =>
