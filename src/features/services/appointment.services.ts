@@ -221,7 +221,7 @@ export class AppointmentsService {
                 title: notify.title,
                 message: msg,
                 type: notify.type,
-                object: { appointmentId: newAppointment._id },
+                object: { appointmentId: newAppointment._id?.toString() },
               }),
             ),
           );
@@ -379,7 +379,9 @@ export class AppointmentsService {
                   title: `Appointment ${status}`,
                   message: msg,
                   type: `appointment_${status}`,
-                  object: { appointmentId: existingAppointment._id },
+                  object: {
+                    appointmentId: existingAppointment._id?.toString(),
+                  },
                 }),
             ),
           );

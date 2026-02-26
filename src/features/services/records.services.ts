@@ -50,10 +50,8 @@ export class RecordService {
       const user = uid;
       // Use moment-timezone for date parsing
       const timezone = req?.user?.timezone || 'UTC';
-      const [date, time] = recorded_at?.toString().split('T') || ['', ''];
-      const dateTime = date + 'T' + time?.slice(0, 5);
-      recorded_at = new Date(dateTime);
-
+      recorded_at = moment(recorded_at).tz(timezone, true).toDate();
+      console.log({ recorded_at });
       // throw new Error('Test error'); // Remove this line after testing
       vital = new mongoose.Types.ObjectId(vital);
 
@@ -65,8 +63,8 @@ export class RecordService {
       const existing = await this.recordModel
         .findOne({
           recorded_at,
-          vital,
-          user,
+          vital: new mongoose.Types.ObjectId(vital),
+          user: new mongoose.Types.ObjectId(uid),
         })
         .exec();
       if (existing) {
@@ -75,9 +73,9 @@ export class RecordService {
       const vstatus = getVitalStatus(vitalDoc.key as any, value);
       // Create new record
       const newRecord = new this.recordModel({
-        user,
+        user: new mongoose.Types.ObjectId(uid),
         recorded_at,
-        vital,
+        vital: new mongoose.Types.ObjectId(vital),
         value: processValue(String(value), 'encrypt'),
         status: vstatus !== 'unknown' ? vstatus : 'normal',
       });
@@ -87,6 +85,7 @@ export class RecordService {
       }
       return newRecord;
     } catch (error) {
+      console.error('Error in createUpdate:', error?.message);
       throw new Error(error?.message);
     }
   }
@@ -391,9 +390,6 @@ export class RecordService {
       time || '7days',
       user?.timezone,
     );
-
-    console.log(startDate, now, 'inhome');
-
     const alert = await this.alertModel
       .findOne({
         user: new mongoose.Types.ObjectId(user._id),

@@ -500,11 +500,11 @@ export class UserService {
           phone: 1,
           country: 1,
           status: 1,
+          gender: 1,
           hashes: 1,
           appointments: 1,
           records: 1,
           alerts: 1,
-          userAlerts: 1,
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });

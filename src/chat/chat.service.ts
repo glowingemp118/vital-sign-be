@@ -225,9 +225,9 @@ export class ChatService {
             message: content?.substring(0, 100),
             type: msg.type,
             object: {
-              messageId: message._id,
-              objectId: userId,
-              subjectId: receiverId,
+              messageId: message._id?.toString(),
+              objectId: userId?.toString(),
+              subjectId: receiverId?.toString(),
             },
           });
         }

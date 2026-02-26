@@ -23,7 +23,7 @@ export class DoctorService {
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(Review.name) private reviewModel: Model<Review>,
     @InjectModel(User.name) private userModel: Model<User>,
-  ) { }
+  ) {}
   async getDoctors(req: any) {
     try {
       const { user } = req;
@@ -36,10 +36,10 @@ export class DoctorService {
         ...reviewsRating('user._id'),
         ...(isAdmin
           ? countStat('user._id', 'doctor', 'appointments', [
-            {
-              $ne: ['$status', 'cancelled'],
-            },
-          ])
+              {
+                $ne: ['$status', 'cancelled'],
+              },
+            ])
           : []),
         sort(),
         {
@@ -47,6 +47,7 @@ export class DoctorService {
             timing: 0,
             __v: 0,
             reviews: 0,
+            appointmentsCount: 0,
             'user.hashes': 0,
           },
         },
@@ -139,6 +140,45 @@ export class DoctorService {
       };
     } catch (error) {
       throw new BadRequestException(error?.message);
+    }
+  }
+
+  async updateDoctor(req: any) {
+    try {
+      let { id: userId } = req.params;
+      const { name, phone, country, gender, experience, about, specialties } =
+        req.body || {};
+      userId = new mongoose.Types.ObjectId(userId);
+      // Update the user document if necessary
+      const updateUserFields = { name, phone, country, gender };
+      const updateDoctorFields = {
+        experience,
+        about,
+        specialties: specialties?.length > 0 ? specialties : undefined,
+      };
+
+      // Update the user and doctor in parallel using findOneAndUpdate
+      const userUpdateResult = await this.userModel.findByIdAndUpdate(
+        userId,
+        { $set: updateUserFields },
+        { new: true }, // Return updated document
+      );
+      if (!userUpdateResult) throw new Error('User not found');
+
+      const doctorUpdateResult = await this.doctorModel.findOneAndUpdate(
+        { user: userId },
+        { $set: updateDoctorFields },
+        { new: true }, // Return updated document
+      );
+      if (!doctorUpdateResult) throw new Error('Doctor not found');
+
+      // Return updated user and doctor data
+      return {
+        ...userUpdateResult.toObject(),
+        doctor: doctorUpdateResult.toObject(),
+      };
+    } catch (error) {
+      throw new Error(error?.message || 'Something went wrong');
     }
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Request } from '@nestjs/common';
+import { Controller, Get, Put, Request } from '@nestjs/common';
 import { DoctorService } from '../services/doctor.services';
 @Controller('')
 export class DoctorController {
@@ -16,6 +16,11 @@ export class DoctorController {
     @Request() req, // User data from JWT or session
   ) {
     return await this.doctorService.getDoctorById(req);
+  }
+  // Doctor Endpoints
+  @Put('doctor/:id')
+  async updateDoctor(@Request() req) {
+    return this.doctorService.updateDoctor(req);
   }
 
   @Get('/doctor/:id/reviews')
