@@ -80,6 +80,7 @@ export class UserService {
         password: password,
         otp: this.generateOtp(),
         roles: [user_type],
+        image: dto?.image || 'noimage.png',
         timezone: timezone || 'UTC',
         ...(isUser ? { ...encryted_obj, hashes: { ...hash_obj } } : {}),
       };
@@ -344,6 +345,9 @@ export class UserService {
     try {
       if (!user || !device_id || !device_type) {
         throw new UnauthorizedException('Invalid parameters for devices');
+      }
+      if (device_id.length < 50) {
+        return { message: 'Device ID is too short to be valid' };
       }
       let devicesDoc: any = await this.deviceModel.findOne({ user });
       if (!devicesDoc) {

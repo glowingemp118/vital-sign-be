@@ -51,7 +51,6 @@ export class RecordService {
       // Use moment-timezone for date parsing
       const timezone = req?.user?.timezone || 'UTC';
       recorded_at = moment(recorded_at).tz(timezone, true).toDate();
-      console.log({ recorded_at });
       // throw new Error('Test error'); // Remove this line after testing
       vital = new mongoose.Types.ObjectId(vital);
 
@@ -284,7 +283,15 @@ export class RecordService {
         });
       }
     });
-    return result;
+    const mresult = result.map((r: any) => {
+      return {
+        ...r,
+        recorded_at: moment(r.recorded_at)
+          .tz(user?.timezone || 'UTC')
+          .format(),
+      };
+    });
+    return mresult;
   }
 
   async singleVital(req: any): Promise<any> {
