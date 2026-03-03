@@ -272,9 +272,7 @@ export class AppointmentsService {
       }
       const pipeline: any[] = [{ $match: obj }]; // Match the filter
       pipeline.push(...appointmentPipeline());
-      if (order) {
-        pipeline.push({ $sort: { date: 1 } });
-      }
+      pipeline.push({ $sort: { createdAt: -1 } });
       const queryFields = {
         'user.hashes': ['email', 'phone', 'name'],
         'doctor.user': ['email', 'phone', 'name'],

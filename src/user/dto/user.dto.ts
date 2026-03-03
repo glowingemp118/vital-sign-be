@@ -58,7 +58,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  image?: string;
+  image?: string = 'noimage.png';
 
   @IsOptional()
   @IsString()
