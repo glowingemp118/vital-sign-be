@@ -50,7 +50,8 @@ export class RecordService {
       const user = uid;
       // Use moment-timezone for date parsing
       const timezone = req?.user?.timezone || 'UTC';
-      recorded_at = moment(recorded_at).tz(timezone, true).toDate();
+      // recorded_at = moment(recorded_at).tz(timezone, true).toDate();
+      recorded_at = new Date(recorded_at);
       // throw new Error('Test error'); // Remove this line after testing
       vital = new mongoose.Types.ObjectId(vital);
 
