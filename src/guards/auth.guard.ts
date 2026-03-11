@@ -68,7 +68,6 @@ export async function validateRefreshToken(token: string): Promise<any> {
     throw new ForbiddenException('Invalid refresh token');
   }
 }
-
 export function generateToken(payload: any, onlyAccessToken = false): any {
   const { _id, email, user_type, timezone } = payload;
   const result: any = {
