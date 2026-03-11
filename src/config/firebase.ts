@@ -7,5 +7,5 @@ admin.initializeApp({
     privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   }),
 });
-
+console.log('Firebase initialized', process.env.FIREBASE_PRIVATE_KEY_ID);
 export default admin;
