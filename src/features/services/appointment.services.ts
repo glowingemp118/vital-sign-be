@@ -255,16 +255,10 @@ export class AppointmentsService {
     try {
       const timezone = user?.timezone || 'UTC';
       const isAdmin = user_type == UserType.Admin;
-      if (user_type == UserType.User) {
-        obj.user = new mongoose.Types.ObjectId(_id);
-      } else if (user_type == UserType.Doctor) {
-        obj.doctor = new mongoose.Types.ObjectId(_id);
-      } else if (isAdmin) {
-        if (patience) {
-          obj.user = new mongoose.Types.ObjectId(patience);
-        } else if (dr) {
-          obj.doctor = new mongoose.Types.ObjectId(dr);
-        }
+      if (patience || user_type == UserType.User) {
+        obj.user = new mongoose.Types.ObjectId(patience || _id);
+      } else if (dr || user_type == UserType.Doctor) {
+        obj.doctor = new mongoose.Types.ObjectId(dr || _id);
       }
       await this.updateExpiredAppointments(user, obj);
       if (status && status !== 'all') {

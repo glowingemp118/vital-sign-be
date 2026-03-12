@@ -36,6 +36,11 @@ export class NotificationService {
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
       const data = await this.notificationModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
+      const unReadCount = await this.notificationModel.countDocuments({
+        user: new mongoose.Types.ObjectId(user || _id),
+        isRead: false,
+      });
+      result.meta.unReadCount = unReadCount; // Add unread count to the result
       return result;
     } catch (err) {
       throw new Error(err?.message);
