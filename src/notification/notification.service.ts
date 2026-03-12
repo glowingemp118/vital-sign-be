@@ -37,7 +37,7 @@ export class NotificationService {
       const data = await this.notificationModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
       const unReadCount = await this.notificationModel.countDocuments({
-        user: new mongoose.Types.ObjectId(user || _id),
+        user: user || _id,
         isRead: false,
       });
       result.meta.unReadCount = unReadCount; // Add unread count to the result
