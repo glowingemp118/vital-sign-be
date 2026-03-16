@@ -438,25 +438,15 @@ export class UserService {
         filter = {},
         status,
       } = req.query || {};
-
-      const stats = [
-        ...countStat('_id', 'user', 'appointments', [
-          // {
-          //   $ne: ['$status', 'cancelled'],
-          // },
-        ]),
-        ...countStat('_id', 'user', 'records'),
-        ...countAlerts(),
-      ];
+      const dr = req?.user?.user_type == UserType.Doctor;
       let obj: any = {
         ...filter,
         user_type: user_type,
       };
-      const dr = req?.user?.user_type == UserType.Doctor;
       if (dr) {
         const userIds = await this.appointmentModel.distinct('user', {
           doctor: new mongoose.Types.ObjectId(req.user._id),
-          status: { $ne: 'cancelled' },
+          // status: { $ne: 'cancelled' },
         });
         if (userIds.length > 0) {
           obj._id = { $in: userIds };
@@ -464,6 +454,19 @@ export class UserService {
           obj._id = null; // No patients, so no users
         }
       }
+      const stats = [
+        ...countStat(
+          '_id',
+          'user',
+          'appointments',
+          dr
+            ? [{ $eq: ['$doctor', new mongoose.Types.ObjectId(req.user._id)] }]
+            : [],
+        ),
+        ...countStat('_id', 'user', 'records'),
+        ...countAlerts(),
+      ];
+
       if (status) {
         obj.status = status;
       }

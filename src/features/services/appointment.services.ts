@@ -255,9 +255,10 @@ export class AppointmentsService {
     try {
       const timezone = user?.timezone || 'UTC';
       const isAdmin = user_type == UserType.Admin;
-      if (patience || user_type == UserType.User) {
+      if (patience || user_type === UserType.User) {
         obj.user = new mongoose.Types.ObjectId(patience || _id);
-      } else if (dr || user_type == UserType.Doctor) {
+      }
+      if (dr || user_type === UserType.Doctor) {
         obj.doctor = new mongoose.Types.ObjectId(dr || _id);
       }
       await this.updateExpiredAppointments(user, obj);

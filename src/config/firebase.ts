@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
-
+import { config } from 'dotenv';
+config();
 admin.initializeApp({
   credential: admin.credential.cert({
     projectId: process.env.FIREBASE_PROJECT_ID,
@@ -7,5 +8,4 @@ admin.initializeApp({
     privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
   }),
 });
-console.log('Firebase initialized', process.env.FIREBASE_PRIVATE_KEY_ID);
 export default admin;

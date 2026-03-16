@@ -1,7 +1,5 @@
 import { processValue } from './encrptdecrpt';
-import { config } from 'dotenv';
-import mongoose from 'mongoose';
-config();
+
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
 
 export const paginationPipeline = ({
