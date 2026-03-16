@@ -8,8 +8,6 @@ import {
 } from '@nestjs/common';
 import helmet from 'helmet';
 import { AllExceptionsFilter, ResponseInterceptor } from './utils/interceptor';
-import { config } from 'dotenv';
-config();
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'debug'],
