@@ -1,7 +1,7 @@
 import { processValue } from './encrptdecrpt';
-
+import { config } from 'dotenv';
+config();
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
-
 export const paginationPipeline = ({
   pageno = 1,
   limit = parseInt(process.env.ITEMPERPAGE),
