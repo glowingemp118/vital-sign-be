@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-@Schema({timestamps:true})
+@Schema({ timestamps: true })
 export class Doctor extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
@@ -25,12 +25,12 @@ export class Doctor extends Document {
       },
     ],
     default: [
-      { day: 'Monday', open: '09:00', close: '17:00', isOpen: true },
-      { day: 'Tuesday', open: '09:00', close: '17:00', isOpen: true },
-      { day: 'Wednesday', open: '09:00', close: '17:00', isOpen: true },
-      { day: 'Thursday', open: '09:00', close: '17:00', isOpen: true },
-      { day: 'Friday', open: '09:00', close: '17:00', isOpen: true },
-      { day: 'Saturday', open: '09:00', close: '13:00', isOpen: true },
+      { day: 'Monday', open: '08:00', close: '20:00', isOpen: true },
+      { day: 'Tuesday', open: '08:00', close: '20:00', isOpen: true },
+      { day: 'Wednesday', open: '08:00', close: '20:00', isOpen: true },
+      { day: 'Thursday', open: '08:00', close: '20:00', isOpen: true },
+      { day: 'Friday', open: '08:00', close: '20:00', isOpen: true },
+      { day: 'Saturday', open: '08:00', close: '20:00', isOpen: true },
       { day: 'Sunday', open: '', close: '', isOpen: false },
     ],
     _id: false, // Prevents automatic _id for array items

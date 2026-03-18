@@ -17,7 +17,7 @@ export class Record {
   @Prop({ type: String, required: true })
   value: String;
 
-  @Prop({ type: String, default: 'normal' })
+  @Prop({ type: String, default: 'not-measured' })
   status: string;
 }
 

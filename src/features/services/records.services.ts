@@ -77,7 +77,7 @@ export class RecordService {
         recorded_at,
         vital: new mongoose.Types.ObjectId(vital),
         value: processValue(String(value), 'encrypt'),
-        status: vstatus !== 'unknown' ? vstatus : 'normal',
+        status: vstatus !== 'unknown' ? vstatus : 'not-measured',
       });
       await newRecord.save();
       if (body.isSaved) {
@@ -280,7 +280,7 @@ export class RecordService {
           recorded_at: from && to ? new Date(to) : new Date(),
           vital,
           value: '0',
-          status: 'normal',
+          status: 'not-measured',
         });
       }
     });
@@ -615,7 +615,7 @@ export class RecordService {
               ...prec,
               value: '0',
               recorded_at: new Date(dateKey),
-              status: 'normal',
+              status: 'not-measured',
             };
           }
           return rec;

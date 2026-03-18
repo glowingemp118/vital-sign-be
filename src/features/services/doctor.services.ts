@@ -17,6 +17,7 @@ import {
 import { Review } from '../schemas/reviews.schema';
 import { UserType } from 'src/user/dto/user.dto';
 import { User } from 'src/user/schemas/user.schema';
+import { modifiedUser } from 'src/utils/appUtils';
 @Injectable()
 export class DoctorService {
   constructor(
@@ -146,15 +147,25 @@ export class DoctorService {
   async updateDoctor(req: any) {
     try {
       let { id: userId } = req.params;
-      const { name, phone, country, gender, experience, about, specialties } =
-        req.body || {};
+      const {
+        image,
+        name,
+        phone,
+        country,
+        gender,
+        experience,
+        about,
+        specialties,
+        timing,
+      } = req.body || {};
       userId = new mongoose.Types.ObjectId(userId);
       // Update the user document if necessary
-      const updateUserFields = { name, phone, country, gender };
+      const updateUserFields = { image, name, phone, country, gender };
       const updateDoctorFields = {
         experience,
         about,
         specialties: specialties?.length > 0 ? specialties : undefined,
+        timing: timing?.length > 0 ? timing : undefined,
       };
 
       // Update the user and doctor in parallel using findOneAndUpdate
@@ -174,7 +185,7 @@ export class DoctorService {
 
       // Return updated user and doctor data
       return {
-        ...userUpdateResult.toObject(),
+        user: modifiedUser(userUpdateResult),
         doctor: doctorUpdateResult.toObject(),
       };
     } catch (error) {
