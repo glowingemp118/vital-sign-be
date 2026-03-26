@@ -81,7 +81,7 @@ export class AdminService {
   async saveSettings(field: string, value: string) {
     let settings = await this.settingsModel.findOne({});
     if (!settings) {
-      settings = new this.settingsModel({ about: '', privacy: '', tac: '' });
+      settings = new this.settingsModel({ about: '', privacy: '', tac: '', monitoring: '' });
     }
     settings[field] = value;
     const savedSettings = await settings.save();

@@ -5,6 +5,10 @@ import { Document } from 'mongoose';
 // Settings Schema for Terms, Privacy, and About
 @Schema()
 export class Settings {
+
+  @Prop({ required: false })
+  monitoring: string;
+
   @Prop({ required: false })
   tac: string;
 

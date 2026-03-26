@@ -16,7 +16,7 @@ import { UserType } from '../user/dto/user.dto';
 
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   //login
   @Post('login')
@@ -26,6 +26,12 @@ export class AdminController {
   }
 
   // Settings Endpoints
+
+  @Get('monitoring')
+  @Public()
+  async getMonitoring() {
+    return this.adminService.getSettings('monitoring');
+  }
   @Get('tac')
   @Public()
   async getTAC() {
@@ -42,6 +48,12 @@ export class AdminController {
   @Public()
   async getAbout() {
     return this.adminService.getSettings('about');
+  }
+
+   @Put('monitoring')
+  @Access(UserType.Admin)
+  async saveMonitoring(@Body() body: { monitoring: string }) {
+    return this.adminService.saveSettings('monitoring', body.monitoring);
   }
 
   @Put('about')
