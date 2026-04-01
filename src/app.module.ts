@@ -11,6 +11,7 @@ import { FeaturesModule } from './features/features.module';
 import { AccessGuard } from './guards/access.guard';
 import { ChatModule } from './chat/chat.module';
 import { NotificationModule } from './notification/notfication.module';
+import { HealthVoiceModule } from './health-voice/health-voice.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -30,6 +31,7 @@ import { NotificationModule } from './notification/notfication.module';
     FeaturesModule,
     ChatModule,
     NotificationModule,
+    HealthVoiceModule
   ],
   controllers: [],
   providers: [
