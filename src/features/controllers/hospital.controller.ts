@@ -8,6 +8,7 @@ import {
 import { Access } from '../../decorators/public.decorator';
 import { UserType } from '../../user/dto/user.dto';
 import { HospitalService } from '../services/hosiptal.service';
+@Controller('hospital')
 export class HospitalController {
     constructor(private readonly hospitalService: HospitalService) { }
 
