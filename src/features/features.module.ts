@@ -30,6 +30,15 @@ import {
 } from 'src/admin/schemas/admin.schema';
 import { Alert, AlertSchema } from './schemas/alert.schema';
 import { Message, MessageSchema } from 'src/chat/schemas/message.schema';
+import { HospitalController } from './controllers/hospital.controller';
+import { HospitalService } from './services/hosiptal.service';
+import { Hospital, HospitalSchema } from './schemas/hospital.schema';
+import { Specialist, SpecialistSchema } from './schemas/specialist.schema';
+import { HospitalUser, HospitalUserSchema } from './schemas/HospitalUser.schema';
+import { Transcription, TranscriptionSchema } from './schemas/transcription.schema';
+import { TranscriptionController } from './controllers/transcription.controller';
+import { TranscriptionService } from './services/transcription.services';
+import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
 
 @Module({
   imports: [
@@ -46,6 +55,11 @@ import { Message, MessageSchema } from 'src/chat/schemas/message.schema';
       { name: ContactSupport.name, schema: ContactSupportSchema },
       { name: Alert.name, schema: AlertSchema },
       { name: Message.name, schema: MessageSchema },
+      { name: Hospital.name, schema: HospitalSchema },
+      { name: Specialist.name, schema: SpecialistSchema },
+      { name: HospitalUser.name, schema: HospitalUserSchema },
+      { name: Transcription.name, schema: TranscriptionSchema },
+      { name: Voice.name, schema: VoiceSchema },
     ]),
   ],
   controllers: [
@@ -55,6 +69,8 @@ import { Message, MessageSchema } from 'src/chat/schemas/message.schema';
     NotificationController,
     DoctorController,
     DashboardController,
+    HospitalController,
+    TranscriptionController
   ],
   providers: [
     DoctorService,
@@ -63,7 +79,9 @@ import { Message, MessageSchema } from 'src/chat/schemas/message.schema';
     CloudinaryService,
     NotificationService,
     DashboardService,
+    HospitalService,
+    TranscriptionService
   ],
   exports: [NotificationService],
 })
-export class FeaturesModule {}
+export class FeaturesModule { }

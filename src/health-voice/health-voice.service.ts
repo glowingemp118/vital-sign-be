@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-const  FormData =require( 'form-data');
+const FormData = require('form-data');
 import * as fs from 'fs';
 import { Model } from 'mongoose';
 import fetch from 'node-fetch';
@@ -147,14 +147,14 @@ Return ONLY valid JSON, no markdown, no extra text:
     try {
       transcription = await this.transcribeAudio(file.path, file.originalname);
     } finally {
-      fs.unlink(file.path, () => {});
+      fs.unlink(file.path, () => { });
     }
 
-    const voiceId = this.generateVoiceId();
+    // const voiceId = this.generateVoiceId();
     const createdAt = new Date().toISOString();
 
-    await this.voiceModel.create({
-      voiceId,
+    const createVoice = await this.voiceModel.create({
+      // voiceId,
       filename: file.originalname,
       transcription,
       createdAt,
@@ -162,30 +162,39 @@ Return ONLY valid JSON, no markdown, no extra text:
       latestSummary: null,
     });
 
-    this.logger.log(`Transcribed [${voiceId}]: "${transcription.slice(0, 80)}..."`);
-    return { voiceId, transcription, createdAt };
+    this.logger.log(`Transcribed [${createVoice._id}]: "${transcription.slice(0, 80)}..."`);
+    return { voiceId: createVoice._id.toString(), transcription, createdAt };
   }
 
   /** GET /voice/:voiceId */
   async getVoice(voiceId: string) {
     const record = await this.voiceModel
-      .findOne({ voiceId })
-      .select('-_id voiceId filename transcription createdAt latestSummary')
+      .findOne({ _id: voiceId })
+      .select('_id voiceId filename transcription createdAt latestSummary')
       .lean();
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
-    return record;
+    return {
+      voiceId: record._id,
+      filename: record.filename,
+      transcription: record.transcription,
+      createdAt: record.createdAt,
+      latestSummary: record.latestSummary,
+    };
   }
 
   /** GET /voice */
   async listVoices() {
     const docs = await this.voiceModel
       .find({})
-      .select('-_id voiceId filename transcription createdAt')
+      .select('_id voiceId filename transcription createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
+      console.log("docs", docs);
+
     const voices = docs.map((v) => ({
-      voiceId: v.voiceId,
+      // voiceId: v.voiceId,
+      voiceId: v._id,
       filename: v.filename,
       preview: (v.transcription || '').slice(0, 100),
       createdAt: v.createdAt,
@@ -196,14 +205,14 @@ Return ONLY valid JSON, no markdown, no extra text:
 
   /** DELETE /voice/:voiceId */
   async deleteVoice(voiceId: string) {
-    const result = await this.voiceModel.deleteOne({ voiceId });
+    const result = await this.voiceModel.deleteOne({ _id: voiceId });
     if (result.deletedCount === 0) throw new NotFoundException(`Voice record not found: ${voiceId}`);
     return { message: `Voice record ${voiceId} deleted.` };
   }
 
   /** POST /summary — generate and save summary */
   async createSummary(voiceId: string, vitals?: VitalsDto) {
-    const record = await this.voiceModel.findOne({ voiceId }).select('transcription').lean();
+    const record = await this.voiceModel.findOne({ _id: voiceId }).select('transcription').lean();
     if (!record) throw new NotFoundException(`No voice record found for voiceId: ${voiceId}`);
 
     this.logger.log(`Generating summary for [${voiceId}]`);
@@ -212,7 +221,7 @@ Return ONLY valid JSON, no markdown, no extra text:
     const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
 
     await this.voiceModel.updateOne(
-      { voiceId },
+      { _id:voiceId },
       {
         $push: { summaries: summaryEntry },
         $set: { latestSummary: summaryEntry },
@@ -225,7 +234,7 @@ Return ONLY valid JSON, no markdown, no extra text:
   /** GET /summary/:voiceId */
   async getSummaries(voiceId: string) {
     const record = await this.voiceModel
-      .findOne({ voiceId })
+      .findOne({_id: voiceId })
       .select('-_id voiceId latestSummary summaries')
       .lean();
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
@@ -240,28 +249,28 @@ Return ONLY valid JSON, no markdown, no extra text:
     try {
       transcription = await this.transcribeAudio(file.path, file.originalname);
     } finally {
-      fs.unlink(file.path, () => {});
+      fs.unlink(file.path, () => { });
     }
 
-    const voiceId = this.generateVoiceId();
+    // const voiceId = this.generateVoiceId();
     const createdAt = new Date().toISOString();
 
-    this.logger.log(`[analyze] Generating summary for [${voiceId}]`);
     const summary = await this.generateHealthSummary(transcription, vitals);
     const generatedAt = new Date().toISOString();
     const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
-
-    await this.voiceModel.create({
-      voiceId,
+    
+    const createVoice = await this.voiceModel.create({
+      // voiceId:
       filename: file.originalname,
       transcription,
       createdAt,
       summaries: [summaryEntry],
       latestSummary: summaryEntry,
     });
+    this.logger.log(`[analyze] Generating summary for [${createVoice?._id}]`);
 
     return {
-      voiceId,
+      voiceId: createVoice._id.toString(),
       transcription,
       vitals: vitals ?? 'not provided',
       summary,

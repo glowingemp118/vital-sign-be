@@ -90,3 +90,19 @@ function getActualType(value: any): string {
   if (value instanceof Date) return 'date';
   return typeof value;
 }
+
+
+export function checkHospital(hospital: any): boolean {
+
+  if (hospital.length > 0) {
+
+    if (!hospital.some((item: any) => item.name || item.location || item.areaLevel)) {
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}

@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import { processValue } from './encrptdecrpt';
 import { config } from 'dotenv';
+import { HospitalUser, HospitalUserSchema } from 'src/features/schemas/HospitalUser.schema';
 config();
 const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
 export const paginationPipeline = ({
@@ -318,25 +320,25 @@ export const chatPipeline = (userId: any, keyword?: string) => {
                   { $eq: ['$_id', { $toObjectId: '$$otherId' }] },
                   ...(keyword
                     ? [
-                        {
-                          $or: [
-                            {
-                              $regexMatch: {
-                                input: '$name',
-                                regex: keyword,
-                                options: 'i',
-                              },
+                      {
+                        $or: [
+                          {
+                            $regexMatch: {
+                              input: '$name',
+                              regex: keyword,
+                              options: 'i',
                             },
-                            {
-                              $regexMatch: {
-                                input: '$hashes.name',
-                                regex: keyword,
-                                options: 'i',
-                              },
+                          },
+                          {
+                            $regexMatch: {
+                              input: '$hashes.name',
+                              regex: keyword,
+                              options: 'i',
                             },
-                          ],
-                        },
-                      ]
+                          },
+                        ],
+                      },
+                    ]
                     : []),
                 ],
               },
@@ -425,15 +427,15 @@ export const recordsPipeline = (search: string) => {
     ...userPipeline(),
     ...(search
       ? [
-          {
-            $match: {
-              $or: [
-                { 'user.hashes.name': { $regex: search, $options: 'i' } },
-                { 'user.hashes.email': { $regex: search, $options: 'i' } },
-              ],
-            },
+        {
+          $match: {
+            $or: [
+              { 'user.hashes.name': { $regex: search, $options: 'i' } },
+              { 'user.hashes.email': { $regex: search, $options: 'i' } },
+            ],
           },
-        ]
+        },
+      ]
       : []),
   ];
 };
@@ -529,3 +531,44 @@ export const countAlerts = () => {
     },
   ];
 };
+
+
+export const GetHospitals = (userId: any) => {
+
+  return [
+    {
+      $match: {
+        $expr: { $eq: ['$user', new mongoose.Types.ObjectId(userId)] },
+      },
+    },
+    {
+      $lookup: {
+        from: 'hospitals',
+        let: { id: '$hospital' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$id'] }
+            }
+          }
+        ],
+        as: 'hospital'
+      },
+    },
+    {
+      $unwind: '$hospital'
+    },
+    {
+      $project: {
+        _id: 0,
+        name: '$hospital.name',
+        location: '$hospital.location',
+        areaLevel: '$hospital.areaLevel',
+        user: 1,
+        createdAt: 1,
+        updatedAt: 1
+      }
+    }
+  ]
+
+}
