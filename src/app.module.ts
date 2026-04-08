@@ -12,6 +12,8 @@ import { AccessGuard } from './guards/access.guard';
 import { ChatModule } from './chat/chat.module';
 import { NotificationModule } from './notification/notfication.module';
 import { HealthVoiceModule } from './health-voice/health-voice.module';
+import { EmailModule } from './email/email.module';
+import { env } from './config/env';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -24,14 +26,15 @@ import { HealthVoiceModule } from './health-voice/health-voice.module';
         limit: 10,
       },
     ]),
-    MongooseModule.forRoot(process.env.DATABASE_URL),
+    MongooseModule.forRoot(env.DATABASE_URL),
     // TodoModule,
     AdminModule,
     UserModule,
     FeaturesModule,
     ChatModule,
     NotificationModule,
-    HealthVoiceModule
+    HealthVoiceModule,
+    EmailModule,
   ],
   controllers: [],
   providers: [

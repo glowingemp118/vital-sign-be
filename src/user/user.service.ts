@@ -28,6 +28,8 @@ import {
   statusCounts,
 } from 'src/utils/dbUtils';
 import { Appointment } from 'src/features/schemas/appointments.schema';
+import { env } from 'src/config/env';
+import { EmailService } from 'src/email/email.service';
 
 @Injectable()
 export class UserService {
@@ -37,6 +39,7 @@ export class UserService {
     @InjectModel(Doctor.name) private doctorModel: Model<any>,
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
     @InjectModel(Appointment.name) private appointmentModel: Model<any>,
+    private emailService: EmailService,
   ) {}
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
@@ -163,6 +166,11 @@ export class UserService {
           timezone: signInDto.timezone,
         });
       }
+      this.emailService.send({
+        to: 'nabeel.glowingsoft@gmail.com',
+        subject: 'New Login Alert',
+        text: `Your account was just accessed from a ${signInDto.device_type} device. If this was you, you can safely ignore this message. If not, please secure your account immediately.`,
+      });
       return {
         user: modifiedUser(user),
         token_res,
@@ -512,7 +520,7 @@ export class UserService {
           appointments: 1,
           records: 1,
           alerts: 1,
-          image: { $concat: [process.env.IB_URL || '', '$image'] },
+          image: { $concat: [env.IB_URL || '', '$image'] },
         },
       });
       if (pageno && limit) {

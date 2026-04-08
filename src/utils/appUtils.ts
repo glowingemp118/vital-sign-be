@@ -1,3 +1,4 @@
+import { env } from 'src/config/env';
 import { UserType } from '../user/dto/user.dto';
 import { processObject } from './encrptdecrpt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
@@ -8,7 +9,7 @@ export const modifiedUser = (user: any) => {
     typeof user?.toObject === 'function' ? user.toObject() : user;
 
   if (!rest.otp) delete rest.otp;
-  rest.image = user.image ? `${process.env.IB_URL}${user.image}` : null;
+  rest.image = user.image ? `${env.IB_URL}${user.image}` : null;
   rest.role = UserType[rest.user_type];
   const { name, email, phone } = rest || {};
   const mObj = { ...rest, ...processObject({ name, email, phone }, 'decrypt') };

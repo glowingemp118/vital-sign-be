@@ -1,13 +1,14 @@
 import * as crypto from 'crypto';
+import { env } from 'src/config/env';
 
 // AES Encryption/Decryption setup
 const algorithm = 'aes-256-gcm';
 const ivLength: number = 12; // 12-byte IV for AES-GCM
 const key: any = crypto
   .createHash('sha256')
-  .update(process.env.ENCRYPTION_KEY || 'your-default-key')
+  .update(env.ENCRYPTION_KEY || 'your-default-key')
   .digest(); // Ensure this is 32 bytes
-const secret = process.env.HASH_SECRET || 'your-hash-secret-key';
+const secret = env.HASH_SECRET || 'your-hash-secret-key';
 // Encrypt a string using AES-256-GCM
 function encrypt(value: string): string {
   const iv: any = crypto.randomBytes(ivLength);

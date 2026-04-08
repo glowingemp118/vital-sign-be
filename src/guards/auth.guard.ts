@@ -9,8 +9,9 @@ import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { Reflector } from '@nestjs/core';
 import { sign } from 'jsonwebtoken';
+import { env } from 'src/config/env';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'Some Complex Secrete Value';
+const JWT_SECRET = env.JWT_SECRET || 'Some Complex Secrete Value';
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(

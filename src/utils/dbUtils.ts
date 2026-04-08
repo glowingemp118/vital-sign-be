@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import { processValue } from './encrptdecrpt';
-import { config } from 'dotenv';
-import { HospitalUser, HospitalUserSchema } from 'src/features/schemas/HospitalUser.schema';
-config();
-const IB_URL = process.env.IB_URL || 'https://placehold.co/40x40?text=';
+import {
+  HospitalUser,
+  HospitalUserSchema,
+} from 'src/features/schemas/HospitalUser.schema';
+import { env } from 'src/config/env';
+const IB_URL = env.IB_URL || 'https://placehold.co/40x40?text=';
 export const paginationPipeline = ({
   pageno = 1,
-  limit = parseInt(process.env.ITEMPERPAGE),
+  limit = parseInt(env.ITEMPERPAGE),
   additional = {},
 }) => {
   const skip = (Number(pageno) - 1) * Number(limit);
@@ -320,25 +322,25 @@ export const chatPipeline = (userId: any, keyword?: string) => {
                   { $eq: ['$_id', { $toObjectId: '$$otherId' }] },
                   ...(keyword
                     ? [
-                      {
-                        $or: [
-                          {
-                            $regexMatch: {
-                              input: '$name',
-                              regex: keyword,
-                              options: 'i',
+                        {
+                          $or: [
+                            {
+                              $regexMatch: {
+                                input: '$name',
+                                regex: keyword,
+                                options: 'i',
+                              },
                             },
-                          },
-                          {
-                            $regexMatch: {
-                              input: '$hashes.name',
-                              regex: keyword,
-                              options: 'i',
+                            {
+                              $regexMatch: {
+                                input: '$hashes.name',
+                                regex: keyword,
+                                options: 'i',
+                              },
                             },
-                          },
-                        ],
-                      },
-                    ]
+                          ],
+                        },
+                      ]
                     : []),
                 ],
               },
@@ -427,15 +429,15 @@ export const recordsPipeline = (search: string) => {
     ...userPipeline(),
     ...(search
       ? [
-        {
-          $match: {
-            $or: [
-              { 'user.hashes.name': { $regex: search, $options: 'i' } },
-              { 'user.hashes.email': { $regex: search, $options: 'i' } },
-            ],
+          {
+            $match: {
+              $or: [
+                { 'user.hashes.name': { $regex: search, $options: 'i' } },
+                { 'user.hashes.email': { $regex: search, $options: 'i' } },
+              ],
+            },
           },
-        },
-      ]
+        ]
       : []),
   ];
 };
@@ -532,9 +534,7 @@ export const countAlerts = () => {
   ];
 };
 
-
 export const GetHospitals = (userId: any) => {
-
   return [
     {
       $match: {
@@ -548,15 +548,15 @@ export const GetHospitals = (userId: any) => {
         pipeline: [
           {
             $match: {
-              $expr: { $eq: ['$_id', '$$id'] }
-            }
-          }
+              $expr: { $eq: ['$_id', '$$id'] },
+            },
+          },
         ],
-        as: 'hospital'
+        as: 'hospital',
       },
     },
     {
-      $unwind: '$hospital'
+      $unwind: '$hospital',
     },
     {
       $project: {
@@ -566,9 +566,8 @@ export const GetHospitals = (userId: any) => {
         areaLevel: '$hospital.areaLevel',
         user: 1,
         createdAt: 1,
-        updatedAt: 1
-      }
-    }
-  ]
-
-}
+        updatedAt: 1,
+      },
+    },
+  ];
+};

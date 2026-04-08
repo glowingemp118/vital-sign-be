@@ -18,6 +18,7 @@ import moment from 'moment-timezone';
 import { Appointment } from '../schemas/appointments.schema';
 import { UserType } from 'src/user/dto/user.dto';
 import { Alert } from '../schemas/alert.schema';
+import { env } from 'src/config/env';
 @Injectable()
 export class RecordService {
   constructor(
@@ -386,7 +387,7 @@ export class RecordService {
         .lean();
       if (duser) {
         duser.image = duser.image
-          ? `${process.env.IB_URL}${duser.image}`
+          ? `${env.IB_URL}${duser.image}`
           : 'noimage.png';
 
         userData = processObject(duser, 'decrypt');

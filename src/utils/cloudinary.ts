@@ -1,15 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as cloudinary from 'cloudinary';
-import { config } from 'dotenv';
-config(); // Load environment variables
+import { env } from 'src/config/env';
 
 @Injectable()
 export class CloudinaryService {
   constructor() {
     cloudinary.v2.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
+      cloud_name: env.CLOUDINARY_CLOUD_NAME,
+      api_key: env.CLOUDINARY_API_KEY,
+      api_secret: env.CLOUDINARY_API_SECRET,
     });
   }
 

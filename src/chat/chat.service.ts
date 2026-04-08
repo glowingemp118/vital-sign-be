@@ -14,6 +14,7 @@ import {
   NOTIFICATION_CONFIG,
   NOTIFICATION_TYPE,
 } from 'src/constants/constants';
+import { env } from 'process';
 
 @Injectable()
 export class ChatService {
@@ -203,7 +204,7 @@ export class ChatService {
               unreadCount: unReadCount,
               otherUser: {
                 ...processObject(user, 'decrypt'),
-                image: user.image ? process.env.IB_URL + user.image : null,
+                image: user.image ? env.IB_URL + user.image : null,
                 isOnline: true,
               },
             },
