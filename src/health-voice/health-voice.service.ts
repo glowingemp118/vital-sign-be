@@ -69,7 +69,26 @@ export class HealthVoiceService {
     const systemPrompt = `You are an advanced AI health analyst with deep medical knowledge — like a highly experienced online doctor giving a thorough, honest, and complete assessment.
 
 DISCLAIMER (always include verbatim at the start of your "disclaimer" field):
-"⚠️ I am not a doctor. This is AI-generated guidance only — not a medical diagnosis. Always consult a qualified healthcare professional before making any medical decisions."
+
+"Before You Start
+Important: Grok is an Artificial Intelligence, not a doctor.
+All suggestions from Grok are AI-generated only. They are not medical advice and must never be used as a diagnosis or treatment.
+
+Monitoring Consent
+Please read, listen, and accept the following before activating 24/7 health monitoring.
+
+Data Collection & Privacy
+By enabling 24/7 monitoring, you authorize the continuous collection of your physiological data. This data is encrypted and stored securely.
+
+Emergency Services
+If the system detects a serious problem, it will send an alert to you. You are responsible for deciding whether to call emergency services. The app does not automatically call 911 or any emergency service.
+
+Liability & Limitations
+This service is only a monitoring aid. It is not a substitute for professional medical care. Grok’s voice messages are suggestions only and should never be treated as a diagnosis.
+
+By clicking “Start Monitoring” you confirm that you have read, listened to, and fully accept these terms. The AI features will remain disabled until you accept.
+
+You must scroll through the entire text and listen to the full audio message before activation is allowed."
 
 Your job:
 - Perform a FULL, deep clinical-style analysis of the patient's vitals and voice message.
@@ -84,7 +103,7 @@ Your job:
 
 Return ONLY valid JSON, no markdown, no extra text:
 {
-  "disclaimer"       : "⚠️ I am not a doctor. This is AI-generated guidance only — not a medical diagnosis. Always consult a qualified healthcare professional before making any medical decisions.",
+  "disclaimer"       : "FULL DISCLAIMER TEXT ABOVE (must match exactly)",
   "overallStatus"    : "normal | warning | urgent",
   "clinicalSummary"  : "string – 3-5 sentences of deep clinical interpretation",
   "vitalBreakdown"   : [{ "vital": "name", "value": "reading", "status": "normal|elevated|low|critical", "interpretation": "string" }],
@@ -190,7 +209,7 @@ Return ONLY valid JSON, no markdown, no extra text:
       .sort({ createdAt: -1 })
       .lean();
 
-      console.log("docs", docs);
+    console.log("docs", docs);
 
     const voices = docs.map((v) => ({
       // voiceId: v.voiceId,
@@ -221,7 +240,7 @@ Return ONLY valid JSON, no markdown, no extra text:
     const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
 
     await this.voiceModel.updateOne(
-      { _id:voiceId },
+      { _id: voiceId },
       {
         $push: { summaries: summaryEntry },
         $set: { latestSummary: summaryEntry },
@@ -234,7 +253,7 @@ Return ONLY valid JSON, no markdown, no extra text:
   /** GET /summary/:voiceId */
   async getSummaries(voiceId: string) {
     const record = await this.voiceModel
-      .findOne({_id: voiceId })
+      .findOne({ _id: voiceId })
       .select('-_id voiceId latestSummary summaries')
       .lean();
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
@@ -258,7 +277,7 @@ Return ONLY valid JSON, no markdown, no extra text:
     const summary = await this.generateHealthSummary(transcription, vitals);
     const generatedAt = new Date().toISOString();
     const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
-    
+
     const createVoice = await this.voiceModel.create({
       // voiceId:
       filename: file.originalname,
