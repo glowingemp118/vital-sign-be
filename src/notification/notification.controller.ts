@@ -12,7 +12,7 @@ import { NotificationService } from './notification.service';
 
 @Controller('notification')
 export class NotificationController {
-  constructor(private readonly service: NotificationService) {}
+  constructor(private readonly service: NotificationService) { }
 
   @Post('send')
   send(@Body() body: any) {
@@ -48,4 +48,26 @@ export class NotificationController {
     const userId = req.user._id;
     return this.service.deleteAllNotifications(userId);
   }
+
+  @Put("/update-status/:notificationId")
+  updateStatus(
+    @Param('notificationId') notificationId: string,
+    @Req() req: any) {
+    return this.service.updateUserStatus(req.user._id, notificationId);
+  }
+
+  @Put("/:notificationId/call-911")
+  call911(
+    @Param('notificationId') notificationId: string,
+    @Req() req: any) {
+    return this.service.handleCall911(req.user._id, notificationId);
+  }
+
+  @Put("/:notificationId/cancel-emergency")
+  cancelEmergency(
+    @Param('notificationId') notificationId: string,
+    @Req() req: any) {
+    return this.service.handleCancelEmergency(req.user._id, notificationId);
+  }
+
 }

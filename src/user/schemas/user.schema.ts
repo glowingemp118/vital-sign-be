@@ -57,6 +57,32 @@ export class User {
 
   @Prop({ type: { name: String, email: String, phone: String }, default: {} })
   hashes: { name: string; email: string; phone: string };
+  @Prop({
+    type: {
+      hypertension: Boolean,
+      diabetes: Boolean,
+      heartCondition: Boolean,
+      arrhythmia: Boolean,
+      highCholesterol: Boolean,
+      Obesity: Boolean,
+    },
+    default: {
+      hypertension: false,
+      diabetes: false,
+      heartCondition: false,
+      arrhythmia: false,
+      highCholesterol: false,
+      Obesity: false
+    },
+  })
+  medicalConditions: {
+    hypertension: boolean;
+    diabetes: boolean;
+    heartCondition: boolean;
+    arrhythmia: boolean;
+    highCholesterol: boolean;
+    Obesity: boolean;
+  };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

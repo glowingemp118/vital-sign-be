@@ -6,6 +6,8 @@ import {
   IsOptional,
   IsNumber,
   IsArray,
+  isObject,
+  IsObject,
 } from 'class-validator';
 
 export enum UserType {
@@ -88,6 +90,11 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   about?: string;
+
+
+  @IsObject()
+  @IsOptional()
+  medicalConditions?: object
 }
 
 export class UpdateUserDto {
@@ -118,4 +125,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   gender?: string;
+
+  @IsObject()
+  @IsOptional()
+  medicalConditions?: object
+
 }

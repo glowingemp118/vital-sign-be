@@ -1,18 +1,19 @@
-import { Injectable } from '@nestjs/common';
-import admin from '../config/firebase';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Device } from 'src/user/schemas/devices.schema';
 import mongoose, { Model } from 'mongoose';
-import { Notification } from './notification.schema';
+import { RecordService } from 'src/features/services/records.services';
+import { Device } from 'src/user/schemas/devices.schema';
 import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
+import admin from '../config/firebase';
+import { Notification } from './notification.schema';
 
 @Injectable()
 export class NotificationService {
   constructor(
     @InjectModel(Device.name) private readonly deviceModel: Model<Device>,
-    @InjectModel(Notification.name)
-    private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
-  ) {}
+    @InjectModel(Notification.name) private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
+    private readonly recordService: RecordService
+  ) { }
   async send(token: string, title: string, body: string) {
     return admin.messaging().send({
       token,
@@ -24,9 +25,10 @@ export class NotificationService {
     const { _id } = req.user;
     const { pageno, limit, type, filter, user } = req.query || {};
 
+
     let obj: any = {
       ...filter,
-      user: user || _id, // Filter by user ID (either from query or authenticated user)
+      user: new mongoose.Types.ObjectId(user || _id), // Filter by user ID (either from query or authenticated user)
     };
     if (type) {
       obj.type = type; // Filter by notification type if provided
@@ -37,7 +39,7 @@ export class NotificationService {
       const data = await this.notificationModel.aggregate(pipeline); // Using the ContactSupport model to aggregate
       const result = finalRes({ pageno, limit, data });
       const unReadCount = await this.notificationModel.countDocuments({
-        user: user || _id,
+        user: new mongoose.Types.ObjectId(user || _id),
         isRead: false,
       });
       result.meta.unReadCount = unReadCount; // Add unread count to the result
@@ -132,6 +134,121 @@ export class NotificationService {
       };
     } catch (error) {
       return { success: false, message: error.message || 'Unknown error' };
+    }
+  }
+
+  async updateUserStatus(userId: string, notificationId: string) {
+
+    try {
+
+      const isNotificationExist = await this.notificationModel.findOne({ _id: notificationId });
+
+
+      if (!isNotificationExist) {
+
+        throw new NotFoundException('Notification not found')
+      }
+
+      if (isNotificationExist.user.toString() !== userId) {
+
+        throw new NotFoundException('Notification not found')
+      }
+      isNotificationExist.object.status = "normal"
+
+      return await isNotificationExist.save()
+
+    } catch (error) {
+      throw new Error(error?.message)
+    }
+
+  }
+
+  async handleCall911(userId: string, notificationId: string) {
+    try {
+
+      const notification = await this.notificationModel.findOne({
+        _id: notificationId,
+        user: userId
+      });
+
+      if (!notification) throw new NotFoundException('Notification not found');
+
+      if (notification.object?.status !== 'critical') {
+        throw new Error('Only critical notifications can trigger 911');
+      }
+      if (notification.object.actioned) {
+        throw new Error('Notification already actioned')
+      }
+
+      // Mark the original critical notification as actioned
+      notification.object = { ...notification.object, actioned: true };
+      await notification.save();
+
+
+      let template = this.recordService.buildNotificationContent("emergency",
+        notification.object.vitalKey,
+        notification.object.value)
+
+      return await this.notificationModel.create({
+        user: userId,
+        title: template.title,
+        message: template.message,
+        isRead: false,
+        type: 'vital',
+        object: {
+          _id: notification.object.vitalId,
+          key: notification.object.vitalKey,
+          value: notification.object.value,
+          status: "emergency",
+        },
+      });
+
+
+    } catch (error) {
+      throw new Error(error?.message)
+    }
+  }
+
+  async handleCancelEmergency(userId: string, notificationId: string) {
+
+    try {
+
+      const notification = await this.notificationModel.findOne({
+        _id: notificationId,
+        user:userId,
+      });
+
+
+      if (!notification) throw new NotFoundException('Notification not found');
+
+      if (notification.object?.status !== 'emergency') {
+        throw new Error('Only emergency notifications can be cancelled');
+      }
+
+      // Mark emergency as cancelled
+      notification.object = { ...notification.object, cancelled: true };
+      await notification.save();
+
+      let template = this.recordService.buildNotificationContent("911",
+        notification.object.vitalKey,
+        notification.object.value)
+
+      // Create "911 Contacted" notification
+      return await this.notificationModel.create({
+        user: userId,
+        title: template.title,
+        message: template.message,
+        isRead: false,
+        type: 'vital',
+        object: {
+          _id: notification.object.vitalId,
+          key: notification.object.vitalKey,
+          value: notification.object.value,
+          status: "911",
+        },
+      });
+    } catch (error) {
+      throw new Error(error?.message)
     }
   }
 }

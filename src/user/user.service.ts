@@ -37,7 +37,7 @@ export class UserService {
     @InjectModel(Doctor.name) private doctorModel: Model<any>,
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
     @InjectModel(Appointment.name) private appointmentModel: Model<any>,
-  ) {}
+  ) { }
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
   };
@@ -47,7 +47,7 @@ export class UserService {
   // Create user and save it to the database
   async createUser(dto: CreateUserDto): Promise<any> {
     try {
-      let { name, email, phone, password, user_type, timezone } = dto;
+      let { name, email, phone, password, user_type, timezone, medicalConditions } = dto;
       email = email ? email.toLowerCase().trim() : ''; // Ensure email is defined
       if (user_type === UserType.Doctor) {
         validateParams(this.doctorModel.schema, dto, {
@@ -82,6 +82,7 @@ export class UserService {
         roles: [user_type],
         image: dto?.image || 'noimage.png',
         timezone: timezone || 'UTC',
+        medicalConditions,
         ...(isUser ? { ...encryted_obj, hashes: { ...hash_obj } } : {}),
       };
       const user = isExistingUser

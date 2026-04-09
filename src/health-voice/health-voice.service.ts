@@ -13,6 +13,7 @@ import fetch from 'node-fetch';
 
 import { VitalsDto } from './dto/upload-voice.dto';
 import { Voice, VoiceDocument } from './schemas/voice.schema';
+import { Notification, NotificationDocument } from 'src/notification/notification.schema';
 
 @Injectable()
 export class HealthVoiceService {
@@ -22,6 +23,7 @@ export class HealthVoiceService {
 
   constructor(
     @InjectModel(Voice.name) private readonly voiceModel: Model<VoiceDocument>,
+    @InjectModel(Notification.name) private readonly notificationModel: Model<NotificationDocument>,
     private readonly config: ConfigService,
   ) {
     this.groqKey = this.config.getOrThrow<string>('GROQ_API_KEY');
