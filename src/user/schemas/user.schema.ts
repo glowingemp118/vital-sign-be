@@ -64,7 +64,7 @@ export class User {
       heartCondition: Boolean,
       arrhythmia: Boolean,
       highCholesterol: Boolean,
-      Obesity: Boolean,
+      obesity: Boolean,
     },
     default: {
       hypertension: false,
@@ -72,7 +72,7 @@ export class User {
       heartCondition: false,
       arrhythmia: false,
       highCholesterol: false,
-      Obesity: false
+      obesity: false
     },
   })
   medicalConditions: {
@@ -81,7 +81,7 @@ export class User {
     heartCondition: boolean;
     arrhythmia: boolean;
     highCholesterol: boolean;
-    Obesity: boolean;
+    obesity: boolean;
   };
 }
 
