@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
 import { RecordService } from 'src/features/services/records.services';
@@ -6,11 +6,13 @@ import { Device } from 'src/user/schemas/devices.schema';
 import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 import admin from '../config/firebase';
 import { Notification } from './notification.schema';
+import { Alert } from 'src/features/schemas/alert.schema';
 
 @Injectable()
 export class NotificationService {
   constructor(
     @InjectModel(Device.name) private readonly deviceModel: Model<Device>,
+    @InjectModel(Alert.name) private readonly alertModel: Model<Alert>, // Optional: if you want to check user validity
     @InjectModel(Notification.name) private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
     private readonly recordService: RecordService
   ) { }
@@ -141,21 +143,22 @@ export class NotificationService {
 
     try {
 
-      const isNotificationExist = await this.notificationModel.findOne({ _id: notificationId });
+      const notification = await this.notificationModel.findById(notificationId);
 
-
-      if (!isNotificationExist) {
-
-        throw new NotFoundException('Notification not found')
-      }
-
-      if (isNotificationExist.user.toString() !== userId) {
+      if (!notification) {
 
         throw new NotFoundException('Notification not found')
       }
-      isNotificationExist.object.status = "normal"
 
-      return await isNotificationExist.save()
+      if (notification.user.toString() !== userId) {
+
+        throw new ForbiddenException('You are not allowed to update this notification')
+      }
+      notification.object.status = "normal"
+
+      notification.markModified('object');
+
+      return await notification.save()
 
     } catch (error) {
       throw new Error(error?.message)
@@ -165,13 +168,17 @@ export class NotificationService {
 
   async handleCall911(userId: string, notificationId: string) {
     try {
+      const notification = await this.notificationModel.findById(notificationId);
 
-      const notification = await this.notificationModel.findOne({
-        _id: notificationId,
-        user: userId
-      });
+      if (!notification) {
 
-      if (!notification) throw new NotFoundException('Notification not found');
+        throw new NotFoundException('Notification not found')
+      }
+
+      if (notification.user.toString() !== userId) {
+
+        throw new ForbiddenException('You are not allowed to update this notification')
+      }
 
       if (notification.object?.status !== 'critical') {
         throw new Error('Only critical notifications can trigger 911');
@@ -213,13 +220,19 @@ export class NotificationService {
 
     try {
 
-      const notification = await this.notificationModel.findOne({
-        _id: notificationId,
-        user:userId,
-      });
-
+      const notification = await this.notificationModel.findById(notificationId);
 
       if (!notification) throw new NotFoundException('Notification not found');
+
+      if (!notification) {
+
+        throw new NotFoundException('Notification not found')
+      }
+
+      if (notification.user.toString() !== userId) {
+
+        throw new ForbiddenException('You are not allowed to update this notification')
+      }
 
       if (notification.object?.status !== 'emergency') {
         throw new Error('Only emergency notifications can be cancelled');
@@ -250,5 +263,20 @@ export class NotificationService {
     } catch (error) {
       throw new Error(error?.message)
     }
+  }
+  async YesIAmOk(userId: string) {
+    const alert = await this.alertModel.findOne({
+      user: new mongoose.Types.ObjectId(userId)
+    });
+
+    if (!alert) {
+      throw new NotFoundException('No alerts found');
+    }
+
+    return await this.alertModel.findByIdAndUpdate(
+      alert._id,
+      { $set: { alerts: [] } },
+      { new: true }
+    );
   }
 }

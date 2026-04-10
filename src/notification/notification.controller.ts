@@ -69,5 +69,8 @@ export class NotificationController {
     @Req() req: any) {
     return this.service.handleCancelEmergency(req.user._id, notificationId);
   }
-
+  @Put("/yes-i-am-ok")
+  YesIAmOk(@Req() req: any) {
+    return this.service.YesIAmOk(req.user._id);
+  }
 }

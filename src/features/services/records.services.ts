@@ -41,7 +41,7 @@ export class RecordService {
   activityVitals = ['steps', 'walkingRunningDistance'];
 
   VITAL_NOTIFICATION_TEMPLATES: any = {
-   
+
     low: (vitalName: string, value: string) => ({
       title: `Health Alert — Check In Required`,
       message: `Your vitals show an unusual pattern. Are you feeling okay?`,
@@ -50,7 +50,7 @@ export class RecordService {
       title: `Health Alert — Check In Required`,
       message: `Your vitals show an unusual pattern. Are you feeling okay?`,
     }),
-    critica: (vitalName: string, value: string) => ({
+    critical: (vitalName: string, value: string) => ({
       title: `High Risk Detected — Response Required`,
       message: `Your pulse spiked significantly. Are you in pain? Respond within 10 seconds.`,
     }),
@@ -76,8 +76,6 @@ export class RecordService {
   async createVitalNotification(userId: any, vitalDoc: any, value: any, vstatus: string): Promise<void> {
     try {
 
-      console.log('[Notification] Creating vital notification for user:', userId);
-
       const vitalName: string = vitalDoc.name ?? vitalDoc.key ?? 'Vital';
 
       const { title, message } = this.buildNotificationContent(vstatus, vitalName, value);
@@ -101,64 +99,61 @@ export class RecordService {
     }
   }
 
-  // async createUpdate(req: any): Promise<Record> {
-  //   try {
-  //     const body = req.body;
-  //     const uid = new mongoose.Types.ObjectId(req?.user?._id);
+  //   async createUpdate(req: any): Promise<Record> {
+  //     try {
+  //       const body = req.body;
+  //       const uid = new mongoose.Types.ObjectId(req?.user?._id);
 
-  //     validateParams(this.recordModel.schema, body, {
-  //       requiredFields: ['recorded_at', 'vital', 'value'],
-  //       allowExtraFields: true,
-  //     });
+  //       validateParams(this.recordModel.schema, body, {
+  //         requiredFields: ['recorded_at', 'vital', 'value'],
+  //         allowExtraFields: true,
+  //       });
 
-  //     let { recorded_at, vital, value } = body;
+  //       let { recorded_at, vital, value } = body;
+  // // Ensure correct types
+  //       const user = uid;
+  //       // Use moment-timezone for date parsing
+  //       const timezone = req?.user?.timezone || 'UTC';
+  //       // recorded_at = moment(recorded_at).tz(timezone, true).toDate();
+  //       recorded_at = new Date(recorded_at);
+  //       // throw new Error('Test error'); // Remove this line after testing
+  //       vital = new mongoose.Types.ObjectId(vital);
 
-  //     // Ensure correct types
-  //     const user = uid;
-  //     // Use moment-timezone for date parsing
-  //     const timezone = req?.user?.timezone || 'UTC';
-  //     // recorded_at = moment(recorded_at).tz(timezone, true).toDate();
-  //     recorded_at = new Date(recorded_at);
-  //     // throw new Error('Test error'); // Remove this line after testing
-  //     vital = new mongoose.Types.ObjectId(vital);
-
-  //     const vitalDoc = await this.vitalModel.findById(vital).exec();
-  //     if (!vitalDoc) {
-  //       throw new Error('Vital not found');
-  //     }
-  //     // Check for existing record
-  //     const existing = await this.recordModel
-  //       .findOne({
+  //       const vitalDoc = await this.vitalModel.findById(vital).exec();
+  //       if (!vitalDoc) {
+  //         throw new Error('Vital not found');
+  //       }
+  //       // Check for existing record
+  //       const existing = await this.recordModel
+  //         .findOne({
+  //           recorded_at,
+  //           vital: new mongoose.Types.ObjectId(vital),
+  //           user: new mongoose.Types.ObjectId(uid),
+  //         })
+  //         .exec();
+  //       if (existing) {
+  //         return existing;
+  //       }
+  //       const vstatus = getVitalStatus(vitalDoc.key as any, value);
+  //       // Create new record
+  //       const newRecord = new this.recordModel({
+  //         user: new mongoose.Types.ObjectId(uid),
   //         recorded_at,
   //         vital: new mongoose.Types.ObjectId(vital),
-  //         user: new mongoose.Types.ObjectId(uid),
-  //       })
-  //       .exec();
-  //     if (existing) {
-  //       console.log("existing=======>134", existing);
-  //       return existing;
+  //         value: processValue(String(value), 'encrypt'),
+  //         status: vstatus !== 'unknown' ? vstatus : 'not-measured',
+  //       });
+  //       await newRecord.save();
+  //       if (body.isSaved) {
+  //         await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
+  //         await this.createVitalNotification(user, vitalDoc, value, vstatus);
+  //       }
+  //       return newRecord;
+  //     } catch (error) {
+  //       console.error('Error in createUpdate:', error?.message);
+  //       throw new Error(error?.message);
   //     }
-  //     const vstatus = getVitalStatus(vitalDoc.key as any, value);
-  //     // Create new record
-  //     const newRecord = new this.recordModel({
-  //       user: new mongoose.Types.ObjectId(uid),
-  //       recorded_at,
-  //       vital: new mongoose.Types.ObjectId(vital),
-  //       value: processValue(String(value), 'encrypt'),
-  //       status: vstatus !== 'unknown' ? vstatus : 'not-measured',
-  //     });
-  //     await newRecord.save();
-  //     console.log("body.isSaved=======>146", body.isSaved);
-  //     if (body.isSaved) {
-  //       await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
-  //       await this.createVitalNotification(user, vitalDoc, value, vstatus);
-  //     }
-  //     return newRecord;
-  //   } catch (error) {
-  //     console.error('Error in createUpdate:', error?.message);
-  //     throw new Error(error?.message);
   //   }
-  // }
 
   async createUpdate(req: any): Promise<Record> {
     try {
