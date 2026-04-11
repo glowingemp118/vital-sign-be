@@ -502,6 +502,30 @@ export class UserService {
       }
 
       pipeline.push({
+        $lookup: {
+          from: "contact-type",
+          let: { id: "$_id" },
+          as: "contactType",
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: ["$user", "$$id"]
+                }
+              }
+            },
+            {
+              $project: {
+                type: 1,
+                contact: 1
+              }
+            }
+          ]
+        }
+      });
+
+
+      pipeline.push({
         $project: {
           name: 1,
           email: 1,
@@ -513,6 +537,7 @@ export class UserService {
           appointments: 1,
           records: 1,
           alerts: 1,
+          contactType: 1,
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });

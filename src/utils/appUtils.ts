@@ -12,6 +12,13 @@ export const modifiedUser = (user: any) => {
   rest.role = UserType[rest.user_type];
   const { name, email, phone } = rest || {};
   const mObj = { ...rest, ...processObject({ name, email, phone }, 'decrypt') };
+
+  if (
+    user?.user_type === UserType.Admin ||
+    user?.user_type === UserType.Doctor
+  ) {
+    delete mObj.medicalConditions;
+  }
   return mObj;
 };
 export const addDr = async (user: any, body: any, models: any) => {
