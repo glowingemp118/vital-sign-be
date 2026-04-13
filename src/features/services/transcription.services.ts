@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { Voice } from 'src/health-voice/schemas/voice.schema';
 import { UserType } from 'src/user/dto/user.dto';
 import { User } from 'src/user/schemas/user.schema';
@@ -56,9 +56,19 @@ export class TranscriptionService {
     async getTranscription(query: any) {
 
         try {
+            const user = query.user;
+
             let { pageno, limit, search } = query;
 
             const pipeline = [];
+
+            if (query.user?.user_type === UserType.User) {
+                pipeline.push({
+                    $match: {
+                        user: new mongoose.Types.ObjectId(user?._id)
+                    }
+                })
+            }
 
             pipeline.push({
                 $lookup: {
@@ -219,7 +229,7 @@ export class TranscriptionService {
             });
 
             if (search) {
-                   const hashSearch = processValue(search, 'hash');
+                const hashSearch = processValue(search, 'hash');
                 pipeline.push({
                     $match: {
                         $or: [
@@ -429,7 +439,15 @@ export class TranscriptionService {
             });
 
 
-            const data = await this.transcriptionModel.aggregate(pipeline);
+            let data = await this.transcriptionModel.aggregate(pipeline);
+
+            data = data?.map((r: any) => {
+                delete r?.user.hashes;
+                return {
+                    ...r,
+                    user: processObject(r.user, 'decrypt'),
+                };
+            })
 
             return data[0];
 

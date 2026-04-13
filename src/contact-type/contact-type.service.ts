@@ -42,7 +42,7 @@ export class ContactTypeService {
             throw new Error('Only primary, secondary and third are allowed')
         }
 
-        const contactExist: any = await this.contactTypeModel.findOne({ type: contact.type, user: user._id });
+        const contactExist: any = await this.contactTypeModel.findOne({ type: contact.type, user: new mongoose.Types.ObjectId(user._id) });
 
         if (contactExist) {
             contactExist.type === contact.type;
@@ -92,9 +92,13 @@ export class ContactTypeService {
 
     async getContactType(req: any) {
 
-        const user = req.user;
+        try {
+            const user = req.user;
 
-        return await this.contactTypeModel.find({ user: user._id });
+            return await this.contactTypeModel.find({ user: new mongoose.Types.ObjectId(user._id) });
 
+        } catch (error) {
+            throw new BadRequestException(error?.message);
+        }
     }
 }

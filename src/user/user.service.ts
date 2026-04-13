@@ -28,6 +28,7 @@ import {
   statusCounts,
 } from 'src/utils/dbUtils';
 import { Appointment } from 'src/features/schemas/appointments.schema';
+import { ContactType } from 'src/contact-type/schemas/contac-type.schema';
 
 @Injectable()
 export class UserService {
@@ -37,6 +38,7 @@ export class UserService {
     @InjectModel(Doctor.name) private doctorModel: Model<any>,
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
     @InjectModel(Appointment.name) private appointmentModel: Model<any>,
+    @InjectModel(ContactType.name) private contactTypeModel: Model<ContactType>,
   ) { }
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
@@ -502,30 +504,6 @@ export class UserService {
       }
 
       pipeline.push({
-        $lookup: {
-          from: "contact-type",
-          let: { id: "$_id" },
-          as: "contactType",
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $eq: ["$user", "$$id"]
-                }
-              }
-            },
-            {
-              $project: {
-                type: 1,
-                contact: 1
-              }
-            }
-          ]
-        }
-      });
-
-
-      pipeline.push({
         $project: {
           name: 1,
           email: 1,
@@ -537,7 +515,6 @@ export class UserService {
           appointments: 1,
           records: 1,
           alerts: 1,
-          contactType: 1,
           image: { $concat: [process.env.IB_URL || '', '$image'] },
         },
       });
@@ -555,13 +532,36 @@ export class UserService {
       );
       const fres = {
         meta: { ...result.meta, ...count },
-        data: result?.data?.map((r: any) => {
-          delete r?.hashes;
-          return {
-            ...processObject(r, 'decrypt'),
-          };
-        }),
+
+        data: await Promise.all(
+          result?.data?.map(async (r: any) => {
+
+            let contactType = await this.contactTypeModel.aggregate([
+              {
+                $match: {
+                  $expr: {
+                    $eq: ['$user', new mongoose.Types.ObjectId(r?._id)]
+                  }
+                }
+              },
+              {
+                $project: {
+                  type: 1,
+                  contact: 1
+                }
+              }
+            ]);
+
+            delete r?.hashes;
+
+            return {
+              ...processObject(r, 'decrypt'),
+              contactType
+            };
+          })
+        )
       };
+
       return fres;
     } catch (err) {
       throw new Error(err?.message);
