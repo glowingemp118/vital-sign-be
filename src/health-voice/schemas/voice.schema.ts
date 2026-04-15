@@ -58,7 +58,7 @@ export class SummaryEntry {
 }
 
 // ── Root: Voice ───────────────────────────────────────────────
-@Schema({ collection: 'voices', timestamps: false })
+@Schema({ timestamps: false })
 export class Voice {
   // @Prop({ required: true, unique: true, index: true })
   // voiceId: string;

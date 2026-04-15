@@ -16,6 +16,9 @@ export class Message {
   @Prop({ type: String, enum: ['text', 'audio', 'file'], required: true })
   messageType: 'text' | 'audio' | 'file';
 
+  @Prop({type:Types.ObjectId,ref:"Voice"})
+  voiceId:Types.ObjectId
+
   @Prop({ required: false })
   mediaUrl: string;
 

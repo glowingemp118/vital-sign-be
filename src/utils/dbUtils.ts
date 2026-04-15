@@ -377,6 +377,7 @@ export const chatPipeline = (userId: any, keyword?: string) => {
               is_verified: 1,
               status: 1,
               user_type: 1,
+              voice: 1,
               isOnline: {
                 $gt: [{ $size: '$onlineStatus' }, 0],
               },
@@ -387,6 +388,30 @@ export const chatPipeline = (userId: any, keyword?: string) => {
       },
     },
     { $unwind: '$otherUser' },
+
+    {
+      $lookup: {
+        from: "voices",
+        localField: "message.voiceId",
+        foreignField: "_id",
+        as: "voice"
+      }
+    },
+    {
+      $unwind: "$voice"
+    },
+
+    {
+      $addFields: {
+        "message.voice": {
+          $cond: {
+            if: { $eq: ["$voice", null] },
+            then: null,
+            else: "$voice"
+          }
+        }
+      }
+    },
 
     // 7. Final response
     {
@@ -399,10 +424,13 @@ export const chatPipeline = (userId: any, keyword?: string) => {
           messageType: '$message.messageType',
           status: '$message.status',
           createdAt: '$message.createdAt',
+          voice: 1,
         },
         unreadCount: 1,
       },
     },
+
+
 
     // 8. Sort chats by latest message
     { $sort: { 'message.createdAt': -1 } },

@@ -1,22 +1,21 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Message, MessageSchema } from './schemas/message.schema';
+import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
+import { NotificationModule } from 'src/notification/notfication.module';
+import { User, UserSchema } from 'src/user/schemas/user.schema';
+import { ChatController } from './chat.controller';
+import { ChatGateway } from './chat.gateway';
+import { ChatService } from './chat.service';
 import {
   Conversation,
   ConversationSchema,
 } from './schemas/conversation.schema';
-import { ChatGateway } from './chat.gateway';
-import { ChatService } from './chat.service';
-import { ChatController } from './chat.controller';
+import { Message, MessageSchema } from './schemas/message.schema';
 import {
   SocketConnection,
   SocketConnectionSchema,
 } from './schemas/socket.schema';
 import { SocketService } from './socket.services';
-import { User, UserSchema } from 'src/user/schemas/user.schema';
-import { NotificationService } from 'src/notification/notification.service';
-import { Device, DeviceSchema } from 'src/user/schemas/devices.schema';
-import { NotificationModule } from 'src/notification/notfication.module';
 
 @Module({
   imports: [
@@ -24,11 +23,12 @@ import { NotificationModule } from 'src/notification/notfication.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Message.name, schema: MessageSchema },
-      { name: Conversation.name, schema: ConversationSchema },
       { name: SocketConnection.name, schema: SocketConnectionSchema },
+      { name: Conversation.name, schema: ConversationSchema },
+      { name: Voice.name, schema: VoiceSchema },
     ]),
   ],
   providers: [ChatGateway, ChatService, SocketService],
   controllers: [ChatController],
 })
-export class ChatModule {}
+export class ChatModule { }

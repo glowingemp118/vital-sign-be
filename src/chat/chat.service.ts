@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { Message } from './schemas/message.schema';
 import moment from 'moment';
@@ -14,17 +14,18 @@ import {
   NOTIFICATION_CONFIG,
   NOTIFICATION_TYPE,
 } from 'src/constants/constants';
+import { Voice } from 'src/health-voice/schemas/voice.schema';
 
 @Injectable()
 export class ChatService {
   constructor(
     @InjectModel(Message.name) private msgModel: Model<Message>,
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(SocketConnection.name)
-    private socketConnectionModel: Model<SocketConnection>, // Inject SocketConnection model
+    @InjectModel(SocketConnection.name) private socketConnectionModel: Model<SocketConnection>, // Inject SocketConnection model
+    @InjectModel(Voice.name) private voiceModel: Model<Voice>,
     private readonly socketService: SocketService,
     private readonly notificationService: NotificationService,
-  ) {}
+  ) { }
 
   // Fetch chats (first message from each conversation with users list)
   async fetchChats(req: any): Promise<any> {
@@ -36,6 +37,7 @@ export class ChatService {
         search = processValue(search || '', 'hash');
       }
       const pipeline: any[] = chatPipeline(userId, search);
+      
 
       if (pageno && limit) {
         pipeline.push(paginationPipeline({ pageno, limit }));
@@ -48,6 +50,9 @@ export class ChatService {
         data: res?.data?.map((r: any) => {
           const ou = r.otherUser;
           const msg = r.message;
+
+          console.log("msg",msg);
+          
           return {
             ...r,
             otherUser:
@@ -94,6 +99,22 @@ export class ChatService {
       );
       const pipeline: any[] = [
         { $match: query },
+        {
+          $lookup: {
+            from: "voices",
+            localField: "voiceId",
+            foreignField: "_id",
+            as: "voice"
+          }
+        },
+        {
+          $unwind: "$voice"
+        },
+        {
+          $project: {
+            voiceId: 0
+          }
+        },
         { $sort: { createdAt: -1 } },
         paginationPipeline({ pageno, limit }),
       ];
@@ -130,7 +151,10 @@ export class ChatService {
       content,
       mediaUrl,
       conversationType = 'direct',
+      voiceId
     } = req.body;
+
+    const user = req.user;
 
     if (conversationType === 'group') return;
 
@@ -145,6 +169,19 @@ export class ChatService {
         .lean();
       if (!receiver) {
         throw new Error('Receiver user not found');
+      }
+
+      if ((user.user_type !== UserType.User) && voiceId) {
+        throw new Error('Only patient can send voice messages');
+      }
+
+      if (voiceId) {
+
+        let isVoiceExist = await this.voiceModel.findById(voiceId);
+
+        if (!isVoiceExist) {
+          throw new Error('Voice not found');
+        }
       }
       // Fetch both possible receiver connections in parallel
       const [directMatch, anyDirectConnection] = await Promise.all([
@@ -161,7 +198,7 @@ export class ChatService {
 
       const isOnline = !!(directMatch || anyDirectConnection);
 
-      const message = await this.msgModel.create({
+      let message: any = await this.msgModel.create({
         subjectId: userId,
         objectId: receiverId,
         messageType,
@@ -170,7 +207,11 @@ export class ChatService {
         type: 'direct',
         readBy: directMatch ? [userId, receiverId] : [userId],
         status: isOnline ? 'DELIVERED' : 'SENT',
+        ...user.user_type === UserType.User ? { voiceId: new Types.ObjectId(voiceId) } : {}
       });
+      console.log("message", message);
+
+      message = await this.msgModel.findById(message._id).populate('voiceId');
 
       const localDate = moment().tz(timezone);
       const messageObject = {
