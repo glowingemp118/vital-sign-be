@@ -30,7 +30,11 @@ export class NotificationService {
 
     let obj: any = {
       ...filter,
-      user: new mongoose.Types.ObjectId(user || _id), // Filter by user ID (either from query or authenticated user)
+      // user: new mongoose.Types.ObjectId(user || _id), // Filter by user ID (either from query or authenticated user)
+      $or: [
+        { user: new mongoose.Types.ObjectId(user || _id) },
+        { user: user || _id },
+      ]
     };
     if (type) {
       obj.type = type; // Filter by notification type if provided
