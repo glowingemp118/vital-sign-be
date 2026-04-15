@@ -276,7 +276,11 @@ export class TranscriptionService {
 
             pipeline.push({
                 $match: {
-                    _id: new mongoose.Types.ObjectId(_id)
+                    $or: [
+                        { _id: new mongoose.Types.ObjectId(_id) },
+                        { voice: new mongoose.Types.ObjectId(_id) }
+                    ]
+
                 }
             });
 

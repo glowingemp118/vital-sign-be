@@ -16,6 +16,7 @@ import {
   SocketConnectionSchema,
 } from './schemas/socket.schema';
 import { SocketService } from './socket.services';
+import { Transcription, TranscriptionSchema } from 'src/features/schemas/transcription.schema';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SocketService } from './socket.services';
       { name: SocketConnection.name, schema: SocketConnectionSchema },
       { name: Conversation.name, schema: ConversationSchema },
       { name: Voice.name, schema: VoiceSchema },
+      { name: Transcription.name, schema: TranscriptionSchema }
     ]),
   ],
   providers: [ChatGateway, ChatService, SocketService],
