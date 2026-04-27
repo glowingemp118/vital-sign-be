@@ -13,6 +13,7 @@ import { ChatModule } from './chat/chat.module';
 import { NotificationModule } from './notification/notfication.module';
 import { HealthVoiceModule } from './health-voice/health-voice.module';
 import { ContactTypeModule } from './contact-type/contact-type.module';
+import { ChatBotModule } from './chat-bot/chat-bot.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -33,7 +34,8 @@ import { ContactTypeModule } from './contact-type/contact-type.module';
     ChatModule,
     NotificationModule,
     HealthVoiceModule,
-    ContactTypeModule
+    ContactTypeModule,
+    ChatBotModule
   ],
   controllers: [],
   providers: [
