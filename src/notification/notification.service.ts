@@ -1,7 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
-import { RecordService } from 'src/features/services/records.services';
 import { Device } from 'src/user/schemas/devices.schema';
 import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 import admin from '../config/firebase';
@@ -13,9 +16,45 @@ export class NotificationService {
   constructor(
     @InjectModel(Device.name) private readonly deviceModel: Model<Device>,
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>, // Optional: if you want to check user validity
-    @InjectModel(Notification.name) private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
-    private readonly recordService: RecordService
-  ) { }
+    @InjectModel(Notification.name)
+    private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
+  ) {}
+  VITAL_NOTIFICATION_TEMPLATES: any = {
+    low: (vitalName: string, value: string) => ({
+      title: `Health Alert — Check In Required`,
+      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
+    }),
+    high: (vitalName: string, value: string) => ({
+      title: `Health Alert — Check In Required`,
+      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
+    }),
+    critical: (vitalName: string, value: string) => ({
+      title: `High Risk Detected — Response Required`,
+      message: `Your pulse spiked significantly. Are you in pain? Respond within 10 seconds.`,
+    }),
+
+    emergency: (vitalName: string, value: string) => ({
+      title: `CRITICAL ALERT — Emergency Response Initiated`,
+      message: `Emergency services have been contacted. Tap if you are conscious.`,
+    }),
+    '911': (vitalName: string, value: string) => ({
+      title: `911 Contacted`,
+      message: `Emergency services were notified with your location and vitals report. A PDF has been sent to your specialist.`,
+    }),
+  };
+
+  buildNotificationContent(
+    vstatus: string,
+    vitalName: string,
+    value: any,
+  ): { title: string; message: string } {
+    const template =
+      this.VITAL_NOTIFICATION_TEMPLATES[vstatus] ||
+      this.VITAL_NOTIFICATION_TEMPLATES['normal'];
+
+    return template(vitalName, value);
+  }
+
   async send(token: string, title: string, body: string) {
     return admin.messaging().send({
       token,
@@ -27,14 +66,13 @@ export class NotificationService {
     const { _id } = req.user;
     const { pageno, limit, type, filter, user } = req.query || {};
 
-
     let obj: any = {
       ...filter,
       // user: new mongoose.Types.ObjectId(user || _id), // Filter by user ID (either from query or authenticated user)
       $or: [
         { user: new mongoose.Types.ObjectId(user || _id) },
         { user: user || _id },
-      ]
+      ],
     };
     if (type) {
       obj.type = type; // Filter by notification type if provided
@@ -148,61 +186,60 @@ export class NotificationService {
   }
 
   async updateUserStatus(userId: string, notificationId: string) {
-
     try {
-
-      const notification = await this.notificationModel.findById(notificationId);
+      const notification =
+        await this.notificationModel.findById(notificationId);
 
       if (!notification) {
-
-        throw new NotFoundException('Notification not found')
+        throw new NotFoundException('Notification not found');
       }
 
       if (notification.user.toString() !== userId) {
-
-        throw new ForbiddenException('You are not allowed to update this notification')
+        throw new ForbiddenException(
+          'You are not allowed to update this notification',
+        );
       }
-      notification.object.status = "normal"
+      notification.object.status = 'normal';
 
       notification.markModified('object');
 
-      return await notification.save()
-
+      return await notification.save();
     } catch (error) {
-      throw new Error(error?.message)
+      throw new Error(error?.message);
     }
-
   }
 
   async handleCall911(userId: string, notificationId: string) {
     try {
-      const notification = await this.notificationModel.findById(notificationId);
+      const notification =
+        await this.notificationModel.findById(notificationId);
 
       if (!notification) {
-
-        throw new NotFoundException('Notification not found')
+        throw new NotFoundException('Notification not found');
       }
 
       if (notification.user.toString() !== userId) {
-
-        throw new ForbiddenException('You are not allowed to update this notification')
+        throw new ForbiddenException(
+          'You are not allowed to update this notification',
+        );
       }
 
       if (notification.object?.status !== 'critical') {
         throw new Error('Only critical notifications can trigger 911');
       }
       if (notification.object.actioned) {
-        throw new Error('Notification already actioned')
+        throw new Error('Notification already actioned');
       }
 
       // Mark the original critical notification as actioned
       notification.object = { ...notification.object, actioned: true };
       await notification.save();
 
-
-      let template = this.recordService.buildNotificationContent("emergency",
+      let template = this.buildNotificationContent(
+        'emergency',
         notification.object.vitalKey,
-        notification.object.value)
+        notification.object.value,
+      );
 
       return await this.notificationModel.create({
         user: userId,
@@ -214,32 +251,29 @@ export class NotificationService {
           _id: notification.object.vitalId,
           key: notification.object.vitalKey,
           value: notification.object.value,
-          status: "emergency",
+          status: 'emergency',
         },
       });
-
-
     } catch (error) {
-      throw new Error(error?.message)
+      throw new Error(error?.message);
     }
   }
 
   async handleCancelEmergency(userId: string, notificationId: string) {
-
     try {
-
-      const notification = await this.notificationModel.findById(notificationId);
+      const notification =
+        await this.notificationModel.findById(notificationId);
 
       if (!notification) throw new NotFoundException('Notification not found');
 
       if (!notification) {
-
-        throw new NotFoundException('Notification not found')
+        throw new NotFoundException('Notification not found');
       }
 
       if (notification.user.toString() !== userId) {
-
-        throw new ForbiddenException('You are not allowed to update this notification')
+        throw new ForbiddenException(
+          'You are not allowed to update this notification',
+        );
       }
 
       if (notification.object?.status !== 'emergency') {
@@ -250,9 +284,11 @@ export class NotificationService {
       notification.object = { ...notification.object, cancelled: true };
       await notification.save();
 
-      let template = this.recordService.buildNotificationContent("911",
+      let template = this.buildNotificationContent(
+        '911',
         notification.object.vitalKey,
-        notification.object.value)
+        notification.object.value,
+      );
 
       // Create "911 Contacted" notification
       return await this.notificationModel.create({
@@ -265,16 +301,16 @@ export class NotificationService {
           _id: notification.object.vitalId,
           key: notification.object.vitalKey,
           value: notification.object.value,
-          status: "911",
+          status: '911',
         },
       });
     } catch (error) {
-      throw new Error(error?.message)
+      throw new Error(error?.message);
     }
   }
   async YesIAmOk(userId: string) {
     const alert = await this.alertModel.findOne({
-      user: new mongoose.Types.ObjectId(userId)
+      user: new mongoose.Types.ObjectId(userId),
     });
 
     if (!alert) {
@@ -284,7 +320,7 @@ export class NotificationService {
     return await this.alertModel.findByIdAndUpdate(
       alert._id,
       { $set: { alerts: [] } },
-      { new: true }
+      { new: true },
     );
   }
 }

@@ -19,7 +19,6 @@ import { Appointment } from '../schemas/appointments.schema';
 import { UserType } from 'src/user/dto/user.dto';
 import { Alert } from '../schemas/alert.schema';
 import { Types } from 'mongoose';
-import { Notification } from 'src/notification/notification.schema';
 import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
@@ -30,8 +29,6 @@ export class RecordService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
-    @InjectModel(Notification.name)
-    private notificationModel: Model<Notification>,
     private readonly notificationService: NotificationService,
   ) {}
   homeVitals = [
@@ -42,42 +39,6 @@ export class RecordService {
   ];
   activityVitals = ['steps', 'walkingRunningDistance'];
 
-  VITAL_NOTIFICATION_TEMPLATES: any = {
-    low: (vitalName: string, value: string) => ({
-      title: `Health Alert — Check In Required`,
-      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
-    }),
-    high: (vitalName: string, value: string) => ({
-      title: `Health Alert — Check In Required`,
-      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
-    }),
-    critical: (vitalName: string, value: string) => ({
-      title: `High Risk Detected — Response Required`,
-      message: `Your pulse spiked significantly. Are you in pain? Respond within 10 seconds.`,
-    }),
-
-    emergency: (vitalName: string, value: string) => ({
-      title: `CRITICAL ALERT — Emergency Response Initiated`,
-      message: `Emergency services have been contacted. Tap if you are conscious.`,
-    }),
-    '911': (vitalName: string, value: string) => ({
-      title: `911 Contacted`,
-      message: `Emergency services were notified with your location and vitals report. A PDF has been sent to your specialist.`,
-    }),
-  };
-
-  buildNotificationContent(
-    vstatus: string,
-    vitalName: string,
-    value: any,
-  ): { title: string; message: string } {
-    const template =
-      this.VITAL_NOTIFICATION_TEMPLATES[vstatus] ||
-      this.VITAL_NOTIFICATION_TEMPLATES['normal'];
-
-    return template(vitalName, value);
-  }
-
   async createVitalNotification(
     userId: any,
     vitalDoc: any,
@@ -87,11 +48,12 @@ export class RecordService {
     try {
       const vitalName: string = vitalDoc.name ?? vitalDoc.key ?? 'Vital';
 
-      const { title, message } = this.buildNotificationContent(
-        vstatus,
-        vitalName,
-        value,
-      );
+      const { title, message } =
+        this.notificationService.buildNotificationContent(
+          vstatus,
+          vitalName,
+          value,
+        );
       const object = {
         // matches your Notification.object field
         vitalId: vitalDoc._id,
