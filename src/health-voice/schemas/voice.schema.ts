@@ -45,7 +45,8 @@ export class HealthSummary {
   @Prop({ type: [Object] }) recommendations: RecommendationItem[];
   @Prop() specialistAdvice: string;
   @Prop() supportMessage: string;
-  @Prop({ default: null }) urgentAlert: string | null;
+  @Prop({ type: String, default: null, required: false })
+  urgentAlert?: string | null;
   @Prop() rawResponse?: string; // fallback if JSON parse fails
 }
 

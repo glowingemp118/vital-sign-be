@@ -20,7 +20,7 @@ import { UserType } from 'src/user/dto/user.dto';
 import { Alert } from '../schemas/alert.schema';
 import { Types } from 'mongoose';
 import { Notification } from 'src/notification/notification.schema';
-
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class RecordService {
@@ -30,8 +30,10 @@ export class RecordService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Appointment.name) private appointmentModel: Model<Appointment>,
     @InjectModel(Alert.name) private alertModel: Model<Alert>,
-    @InjectModel(Notification.name) private notificationModel: Model<Notification>,
-  ) { }
+    @InjectModel(Notification.name)
+    private notificationModel: Model<Notification>,
+    private readonly notificationService: NotificationService,
+  ) {}
   homeVitals = [
     'bloodPressure',
     'heartRate',
@@ -41,7 +43,6 @@ export class RecordService {
   activityVitals = ['steps', 'walkingRunningDistance'];
 
   VITAL_NOTIFICATION_TEMPLATES: any = {
-
     low: (vitalName: string, value: string) => ({
       title: `Health Alert — Check In Required`,
       message: `Your vitals show an unusual pattern. Are you feeling okay?`,
@@ -65,37 +66,65 @@ export class RecordService {
     }),
   };
 
-  buildNotificationContent(vstatus: string, vitalName: string, value: any): { title: string; message: string } {
-
-    const template = this.VITAL_NOTIFICATION_TEMPLATES[vstatus] || this.VITAL_NOTIFICATION_TEMPLATES['normal'];
+  buildNotificationContent(
+    vstatus: string,
+    vitalName: string,
+    value: any,
+  ): { title: string; message: string } {
+    const template =
+      this.VITAL_NOTIFICATION_TEMPLATES[vstatus] ||
+      this.VITAL_NOTIFICATION_TEMPLATES['normal'];
 
     return template(vitalName, value);
-
   }
 
-  async createVitalNotification(userId: any, vitalDoc: any, value: any, vstatus: string): Promise<void> {
+  async createVitalNotification(
+    userId: any,
+    vitalDoc: any,
+    value: any,
+    vstatus: string,
+  ): Promise<void> {
     try {
-
       const vitalName: string = vitalDoc.name ?? vitalDoc.key ?? 'Vital';
 
-      const { title, message } = this.buildNotificationContent(vstatus, vitalName, value);
-
-      await this.notificationModel.create({
+      const { title, message } = this.buildNotificationContent(
+        vstatus,
+        vitalName,
+        value,
+      );
+      const object = {
+        // matches your Notification.object field
+        vitalId: vitalDoc._id,
+        vitalKey: vitalDoc.key,
+        value,
+        status: vstatus,
+      };
+      await this.notificationService.sendNotification({
         user: userId,
         title,
         message,
-        isRead: false,
-        type: 'vital',          // matches your Notification.type field
-        object: {               // matches your Notification.object field
-          vitalId: vitalDoc._id,
-          vitalKey: vitalDoc.key,
-          value,
-          status: vstatus,
-        },
+        type: 'vital',
+        object: object,
       });
+      // await this.notificationModel.create({
+      //   user: userId,
+      //   title,
+      //   message,
+      //   isRead: false,
+      //   type: 'vital',          // matches your Notification.type field
+      //   object: {               // matches your Notification.object field
+      //     vitalId: vitalDoc._id,
+      //     vitalKey: vitalDoc.key,
+      //     value,
+      //     status: vstatus,
+      //   },
+      // });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
-      console.error('[Notification] Failed to create vital notification:', err?.message);
+      console.error(
+        '[Notification] Failed to create vital notification:',
+        err?.message,
+      );
     }
   }
 
@@ -223,15 +252,9 @@ export class RecordService {
 
       // ── Alert + Notification (new record OR value actually changed) ───
       if (body.isSaved) {
-
         await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
 
-        await this.createVitalNotification(
-          user,
-          vitalDoc,
-          value,
-          vstatus,
-        );
+        await this.createVitalNotification(user, vitalDoc, value, vstatus);
       }
 
       return savedRecord;
