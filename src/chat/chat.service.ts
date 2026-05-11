@@ -110,7 +110,7 @@ export class ChatService {
           }
         },
         {
-          $unwind: "$voice"
+          $unwind: { path: "$voice", preserveNullAndEmptyArrays: true }
         },
         {
           $project: {
