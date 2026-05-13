@@ -398,7 +398,10 @@ export const chatPipeline = (userId: any, keyword?: string) => {
       }
     },
     {
-      $unwind: "$voice"
+      $unwind:{
+        path: "$voice",
+        preserveNullAndEmptyArrays: true
+      }
     },
 
     {

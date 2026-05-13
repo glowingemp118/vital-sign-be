@@ -41,11 +41,15 @@ export class ChatService {
       const pipeline: any[] = chatPipeline(userId, search);
 
 
+
       if (pageno && limit) {
         pipeline.push(paginationPipeline({ pageno, limit }));
       }
 
       const data: any = await this.msgModel.aggregate(pipeline);
+
+      console.log("data", data);
+
       const res = finalRes({ pageno, limit, data });
       const formattedRes = {
         ...res,
@@ -198,177 +202,177 @@ export class ChatService {
           await transcription.save();
         }
       }
-        // Fetch both possible receiver connections in parallel
-        const [directMatch, anyDirectConnection] = await Promise.all([
-          this.socketConnectionModel.findOne({
-            subjectId: receiverId,
-            objectId: userId,
-            type: 'direct',
-          }),
-          this.socketConnectionModel.findOne({
-            subjectId: receiverId,
-            type: 'direct',
-          }),
-        ]);
-
-        const isOnline = !!(directMatch || anyDirectConnection);
-
-        let message: any = await this.msgModel.create({
-          subjectId: userId,
-          objectId: receiverId,
-          messageType,
-          content: processValue(content, 'encrypt'),
-          mediaUrl,
+      // Fetch both possible receiver connections in parallel
+      const [directMatch, anyDirectConnection] = await Promise.all([
+        this.socketConnectionModel.findOne({
+          subjectId: receiverId,
+          objectId: userId,
           type: 'direct',
-          readBy: directMatch ? [userId, receiverId] : [userId],
-          status: isOnline ? 'DELIVERED' : 'SENT',
-          ...user.user_type === UserType.User ? { voiceId: new Types.ObjectId(voiceId) } : {}
-        });
+        }),
+        this.socketConnectionModel.findOne({
+          subjectId: receiverId,
+          type: 'direct',
+        }),
+      ]);
 
-        message = await this.msgModel.findById(message._id).populate('voiceId');
+      const isOnline = !!(directMatch || anyDirectConnection);
 
-        const localDate = moment().tz(timezone);
-        const messageObject = {
-          ...message.toObject(),
-          content,
-          timesince: localDate.fromNow(),
-        };
-        const bTasks = async () => {
-          const user = await this.userModel
-            .findById(userId, 'name email image user_type')
-            .lean();
-          if (directMatch) {
-            this.socketService.emitToSocket(
-              directMatch.socketId,
-              'receivedMessage',
-              messageObject,
-            );
-          }
-          if (isOnline) {
-            const unReadCount = await this.msgModel.countDocuments({
-              objectId: receiverId,
-              subjectId: userId,
-              readBy: { $ne: receiverId },
-            });
-            this.socketService.emitToSocket(
-              anyDirectConnection.socketId || directMatch.socketId,
-              'chatUpdated',
-              {
-                message: messageObject,
-                unreadCount: unReadCount,
-                otherUser: {
-                  ...processObject(user, 'decrypt'),
-                  image: user.image ? process.env.IB_URL + user.image : null,
-                  isOnline: true,
-                },
-              },
-            );
-          }
+      let message: any = await this.msgModel.create({
+        subjectId: userId,
+        objectId: receiverId,
+        messageType,
+        content: processValue(content, 'encrypt'),
+        mediaUrl,
+        type: 'direct',
+        readBy: directMatch ? [userId, receiverId] : [userId],
+        status: isOnline ? 'DELIVERED' : 'SENT',
+        ...user.user_type === UserType.User ? { voiceId: new Types.ObjectId(voiceId) } : {}
+      });
 
-          await this.socketConnectionModel.updateOne(
-            { _id: directMatch?._id || anyDirectConnection?._id },
-            { lastActive: Date.now() },
+      message = await this.msgModel.findById(message._id).populate('voiceId');
+
+      const localDate = moment().tz(timezone);
+      const messageObject = {
+        ...message.toObject(),
+        content,
+        timesince: localDate.fromNow(),
+      };
+      const bTasks = async () => {
+        const user = await this.userModel
+          .findById(userId, 'name email image user_type')
+          .lean();
+        if (directMatch) {
+          this.socketService.emitToSocket(
+            directMatch.socketId,
+            'receivedMessage',
+            messageObject,
           );
-
-          // 🔹 Otherwise send push notification
-          if (!isOnline) {
-            const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
-            const name = processValue(user.name, 'decrypt');
-            await this.notificationService.sendNotification({
-              userId: receiverId,
-              title: `${name} messaged you`,
-              message: content?.substring(0, 100),
-              type: msg.type,
-              object: {
-                messageId: message._id?.toString(),
-                objectId: userId?.toString(),
-                subjectId: receiverId?.toString(),
+        }
+        if (isOnline) {
+          const unReadCount = await this.msgModel.countDocuments({
+            objectId: receiverId,
+            subjectId: userId,
+            readBy: { $ne: receiverId },
+          });
+          this.socketService.emitToSocket(
+            anyDirectConnection.socketId || directMatch.socketId,
+            'chatUpdated',
+            {
+              message: messageObject,
+              unreadCount: unReadCount,
+              otherUser: {
+                ...processObject(user, 'decrypt'),
+                image: user.image ? process.env.IB_URL + user.image : null,
+                isOnline: true,
               },
-            });
-          }
-        };
-        // 🔹 If receiver is online → emit via socket
-        await bTasks();
-        return {
-          message: 'Message sent successfully',
-          data: messageObject,
-        };
-      } catch (error: any) {
-        throw new Error(`Error sending direct message: ${error.message}`);
-      }
-    }
-
-  async deleteChat(req: any, otherUserId: string) {
-      const userId = req?.user?._id;
-
-      try {
-        const query = {
-          $or: [
-            { subjectId: userId, objectId: otherUserId },
-            { subjectId: otherUserId, objectId: userId },
-          ],
-        };
-
-        const result = await this.msgModel.deleteMany(query);
-
-        if (result.deletedCount === 0) {
-          throw new Error('No chat found to delete');
+            },
+          );
         }
 
-        return {
-          message: 'Chat deleted successfully',
-          deletedCount: result.deletedCount,
-        };
-      } catch (error) {
-        throw new Error('Error deleting chat: ' + error.message);
-      }
-    }
-
-  async deleteMessage(req: any, messageId: string) {
-      try {
-        const message = await this.msgModel.findByIdAndDelete(messageId);
-
-        if (!message) {
-          throw new Error('No such message found');
-        }
-
-        return {
-          message: 'Message deleted successfully',
-          messageId,
-        };
-      } catch (error) {
-        throw new Error('Error deleting message: ' + error.message);
-      }
-    }
-
-  async markAllMessagesAsRead(req: any, otherUserId: string) {
-      const userId = req.user._id;
-
-      try {
-        const result = await this.msgModel.updateMany(
-          {
-            $or: [
-              { subjectId: otherUserId, objectId: userId },
-              { subjectId: userId, objectId: otherUserId },
-            ],
-            readBy: { $ne: userId },
-          },
-          { $addToSet: { readBy: userId } },
+        await this.socketConnectionModel.updateOne(
+          { _id: directMatch?._id || anyDirectConnection?._id },
+          { lastActive: Date.now() },
         );
 
-        if (result.modifiedCount === 0) {
-          return {
-            message: 'No unread messages found to mark as read',
-            modifiedCount: 0,
-          };
+        // 🔹 Otherwise send push notification
+        if (!isOnline) {
+          const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
+          const name = processValue(user.name, 'decrypt');
+          await this.notificationService.sendNotification({
+            userId: receiverId,
+            title: `${name} messaged you`,
+            message: content?.substring(0, 100),
+            type: msg.type,
+            object: {
+              messageId: message._id?.toString(),
+              objectId: userId?.toString(),
+              subjectId: receiverId?.toString(),
+            },
+          });
         }
-
-        return {
-          message: 'All messages marked as read successfully',
-          modifiedCount: result.modifiedCount,
-        };
-      } catch (error) {
-        throw new Error('Error marking messages as read: ' + error.message);
-      }
+      };
+      // 🔹 If receiver is online → emit via socket
+      await bTasks();
+      return {
+        message: 'Message sent successfully',
+        data: messageObject,
+      };
+    } catch (error: any) {
+      throw new Error(`Error sending direct message: ${error.message}`);
     }
   }
+
+  async deleteChat(req: any, otherUserId: string) {
+    const userId = req?.user?._id;
+
+    try {
+      const query = {
+        $or: [
+          { subjectId: userId, objectId: otherUserId },
+          { subjectId: otherUserId, objectId: userId },
+        ],
+      };
+
+      const result = await this.msgModel.deleteMany(query);
+
+      if (result.deletedCount === 0) {
+        throw new Error('No chat found to delete');
+      }
+
+      return {
+        message: 'Chat deleted successfully',
+        deletedCount: result.deletedCount,
+      };
+    } catch (error) {
+      throw new Error('Error deleting chat: ' + error.message);
+    }
+  }
+
+  async deleteMessage(req: any, messageId: string) {
+    try {
+      const message = await this.msgModel.findByIdAndDelete(messageId);
+
+      if (!message) {
+        throw new Error('No such message found');
+      }
+
+      return {
+        message: 'Message deleted successfully',
+        messageId,
+      };
+    } catch (error) {
+      throw new Error('Error deleting message: ' + error.message);
+    }
+  }
+
+  async markAllMessagesAsRead(req: any, otherUserId: string) {
+    const userId = req.user._id;
+
+    try {
+      const result = await this.msgModel.updateMany(
+        {
+          $or: [
+            { subjectId: otherUserId, objectId: userId },
+            { subjectId: userId, objectId: otherUserId },
+          ],
+          readBy: { $ne: userId },
+        },
+        { $addToSet: { readBy: userId } },
+      );
+
+      if (result.modifiedCount === 0) {
+        return {
+          message: 'No unread messages found to mark as read',
+          modifiedCount: 0,
+        };
+      }
+
+      return {
+        message: 'All messages marked as read successfully',
+        modifiedCount: result.modifiedCount,
+      };
+    } catch (error) {
+      throw new Error('Error marking messages as read: ' + error.message);
+    }
+  }
+}
