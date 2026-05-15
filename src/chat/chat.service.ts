@@ -191,15 +191,20 @@ export class ChatService {
           throw new Error('Voice not found');
         }
 
-        if (receiver.user_type === UserType.Doctor) {
+        const isTranscriptionExist = await this.transcriptionModel.findOne({ voice: voiceId });
 
-          const transcription = new this.transcriptionModel({
-            doctor: new mongoose.Types.ObjectId(receiverId),
-            voice: new mongoose.Types.ObjectId(voiceId),
-            user: new mongoose.Types.ObjectId(userId),
-          });
+        if (!isTranscriptionExist) {
 
-          await transcription.save();
+          if (receiver.user_type === UserType.Doctor) {
+
+            const transcription = new this.transcriptionModel({
+              doctor: new mongoose.Types.ObjectId(receiverId),
+              voice: new mongoose.Types.ObjectId(voiceId),
+              user: new mongoose.Types.ObjectId(userId),
+            });
+
+            await transcription.save();
+          }
         }
       }
       // Fetch both possible receiver connections in parallel

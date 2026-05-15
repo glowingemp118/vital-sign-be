@@ -70,6 +70,15 @@ export class TranscriptionService {
                 })
             }
 
+            if (query.user?.user_type === UserType.Doctor) {
+                pipeline.push({
+                    $match: {
+                        doctor: new mongoose.Types.ObjectId(user?._id)
+                    }
+                })
+            }
+
+
             pipeline.push({
                 $lookup: {
                     from: "voices",
