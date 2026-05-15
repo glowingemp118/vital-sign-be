@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type VoiceDocument = Voice & Document;
 
@@ -77,6 +77,9 @@ export class Voice {
 
   @Prop({ type: Object, default: null })
   latestSummary: SummaryEntry | null;
+
+  @Prop({ type: Types.ObjectId, required: true, ref: 'User' })
+  userId: Types.ObjectId;
 }
 
 export const VoiceSchema = SchemaFactory.createForClass(Voice);

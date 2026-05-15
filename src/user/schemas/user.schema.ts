@@ -57,6 +57,12 @@ export class User {
 
   @Prop({ type: { name: String, email: String, phone: String }, default: {} })
   hashes: { name: string; email: string; phone: string };
+
+  @Prop({ type: String })
+  previousEmail: {
+    type: String
+  };
+
   @Prop({
     type: {
       hypertension: Boolean,

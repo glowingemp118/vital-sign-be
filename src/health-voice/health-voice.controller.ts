@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   UploadedFile,
   UseInterceptors
 } from '@nestjs/common';
@@ -82,19 +83,20 @@ export class HealthVoiceController {
   }))
   async uploadVoice(
     @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request
   ) {
 
     if (!file) throw new BadRequestException('No audio file uploaded.');
 
-    return this.healthVoiceService.uploadVoice(file);
+    return this.healthVoiceService.uploadVoice(file,req);
   }
 
   // ── GET /api/voice ───────────────────────────────────────────
   @Get('voice')
   @ApiOperation({ summary: 'List all voice records' })
   @ApiResponse({ status: 200, description: 'Returns paginated voice list' })
-  async listVoices() {
-    return this.healthVoiceService.listVoices();
+  async listVoices(@Req() req: Request) {
+    return this.healthVoiceService.listVoices(req);
   }
 
   // ── GET /api/voice/:voiceId ──────────────────────────────────

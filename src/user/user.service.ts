@@ -409,7 +409,11 @@ export class UserService {
   // Soft delete a user by updating status to 'deleted'
   async softDeleteUser(userId: string) {
     try {
-      const user = await this.userModel.findById(userId);
+
+      const user:any = await this.userModel.findById(userId);
+
+      const newEmail = user.email.split('@')[0] + '-deleted' + '@' + user.email.split('@')[1]
+
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
@@ -420,7 +424,12 @@ export class UserService {
       }
       await this.userModel.findByIdAndUpdate(
         userId,
-        { status: 'deleted', is_verified: false },
+        {
+          status: 'deleted',
+          is_verified: false,
+          previousEmail: user.email,
+          email: newEmail
+        },
         { new: true },
       );
       return { message: 'User deleted successfully' };

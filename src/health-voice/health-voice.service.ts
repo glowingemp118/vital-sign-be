@@ -161,7 +161,7 @@ Return ONLY valid JSON, no markdown, no extra text:
   // ────────────────────────────────────────────────────────────
 
   /** POST /voice/upload — transcribe and store */
-  async uploadVoice(file: Express.Multer.File): Promise<{ voiceId: string; transcription: string; createdAt: string }> {
+  async uploadVoice(file: Express.Multer.File, req: any): Promise<{ voiceId: string; transcription: string; createdAt: string, userId: string }> {
     this.logger.log(`Transcribing: ${file.originalname}`);
 
     let transcription: string;
@@ -181,10 +181,11 @@ Return ONLY valid JSON, no markdown, no extra text:
       createdAt,
       summaries: [],
       latestSummary: null,
+      userId: req?.user?._id
     });
 
     this.logger.log(`Transcribed [${createVoice._id}]: "${transcription.slice(0, 80)}..."`);
-    return { voiceId: createVoice._id.toString(), transcription, createdAt };
+    return { voiceId: createVoice._id.toString(), transcription, createdAt, userId: req?.user?._id };
   }
 
   /** GET /voice/:voiceId */
@@ -204,14 +205,13 @@ Return ONLY valid JSON, no markdown, no extra text:
   }
 
   /** GET /voice */
-  async listVoices() {
+  async listVoices(req: any) {
+
     const docs = await this.voiceModel
-      .find({})
+      .find({ userId: req?.user?._id })
       .select('_id voiceId filename transcription createdAt')
       .sort({ createdAt: -1 })
       .lean();
-
-    console.log("docs", docs);
 
     const voices = docs.map((v) => ({
       // voiceId: v.voiceId,
