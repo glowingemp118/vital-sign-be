@@ -191,7 +191,9 @@ export class ChatService {
           throw new Error('Voice not found');
         }
 
-        const isTranscriptionExist = await this.transcriptionModel.findOne({ voice: voiceId });
+        const isTranscriptionExist = await this.transcriptionModel.findOne({ voice: new mongoose.Types.ObjectId(voiceId) });
+
+        console.log("isTranscriptionExist=====>", isTranscriptionExist);
 
         if (!isTranscriptionExist) {
 
