@@ -108,8 +108,25 @@ export class ChatService {
         {
           $lookup: {
             from: "voices",
-            localField: "voiceId",
-            foreignField: "_id",
+            // localField: "voiceId",
+            // foreignField: "_id",
+            let: { voiceId: "$voiceId" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: ["$_id", "$$voiceId"]
+                  }
+                }
+              },
+              {
+                $addFields: {
+                  "latestSummary.audioUrl": {
+                    $concat: ["https://res.cloudinary.com/", process.env.CLOUDINARY_CLOUD_NAME, "/video/upload/", "$latestSummary.audioUrl"]
+                  }
+                }
+              }
+            ],
             as: "voice"
           }
         },
@@ -193,8 +210,6 @@ export class ChatService {
 
         const isTranscriptionExist = await this.transcriptionModel.findOne({ voice: new mongoose.Types.ObjectId(voiceId) });
 
-        console.log("isTranscriptionExist=====>", isTranscriptionExist);
-
         if (!isTranscriptionExist) {
 
           if (receiver.user_type === UserType.Doctor) {
@@ -239,9 +254,27 @@ export class ChatService {
       message = await this.msgModel.findById(message._id).populate('voiceId');
 
       const localDate = moment().tz(timezone);
+
+      const cloudBase =
+        `http://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
+
       const messageObject = {
         ...message.toObject(),
         content,
+
+        voiceId: {
+          ...message.voiceId,
+          latestSummary: message.voiceId?.latestSummary
+            ? {
+              ...message.voiceId.latestSummary,
+              audioUrl: message.voiceId.latestSummary.audioUrl
+                ? cloudBase +
+                message.voiceId.latestSummary.audioUrl
+                : null,
+            }
+            : null,
+        },
+
         timesince: localDate.fromNow(),
       };
       const bTasks = async () => {

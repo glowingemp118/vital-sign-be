@@ -56,6 +56,7 @@ export class SummaryEntry {
   @Prop({ type: Object }) vitals: Vitals | null;
   @Prop({ type: Object }) summary: HealthSummary;
   @Prop() generatedAt: string;
+  @Prop({ type: String, default: "" }) audioUrl?: string;
 }
 
 // ── Root: Voice ───────────────────────────────────────────────

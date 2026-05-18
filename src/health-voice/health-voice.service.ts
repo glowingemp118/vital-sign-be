@@ -10,10 +10,14 @@ const FormData = require('form-data');
 import * as fs from 'fs';
 import { Model } from 'mongoose';
 import fetch from 'node-fetch';
+import Groq from 'groq-sdk';
+import * as edgeTTS from 'node-edge-tts';
 
 import { VitalsDto } from './dto/upload-voice.dto';
 import { Voice, VoiceDocument } from './schemas/voice.schema';
 import { Notification, NotificationDocument } from 'src/notification/notification.schema';
+import path from 'path';
+import { CloudinaryService } from 'src/utils/cloudinary';
 
 @Injectable()
 export class HealthVoiceService {
@@ -25,9 +29,16 @@ export class HealthVoiceService {
     @InjectModel(Voice.name) private readonly voiceModel: Model<VoiceDocument>,
     @InjectModel(Notification.name) private readonly notificationModel: Model<NotificationDocument>,
     private readonly config: ConfigService,
+    private readonly cloudinaryService: CloudinaryService
   ) {
     this.groqKey = this.config.getOrThrow<string>('GROQ_API_KEY');
+
   }
+
+  private groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
+  });
+
 
   // ────────────────────────────────────────────────────────────
   //  PRIVATE: Groq helpers
@@ -152,13 +163,75 @@ Return ONLY valid JSON, no markdown, no extra text:
     }
   }
 
-  private generateVoiceId(): string {
-    return `voice_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  }
+  // private async convertTextToSpeech(text: string): Promise<string> {
+  //   try {
+  //     // create uploads/audio folder if not exists
+  //     const outputDir = path.join(process.cwd(), 'uploads', 'audio');
+
+  //     if (!fs.existsSync(outputDir)) {
+  //       fs.mkdirSync(outputDir, { recursive: true });
+  //     }
+
+  //     const fileName = `summary-${Date.now()}.wav`;
+  //     const outputPath = path.join(outputDir, fileName);
+
+  //     // Generate speech
+  //     const response = await this.groq.audio.speech.create({
+  //       model: 'canopylabs/orpheus-v1-english',
+  //       voice: 'hannah',
+  //       input: text,
+  //       response_format: 'wav',
+  //     });
+
+  //     const buffer: any = Buffer.from(await response.arrayBuffer());
+
+  //     await fs.promises.writeFile(outputPath, buffer);
+
+  //     this.logger.log(`Audio generated: ${outputPath}`);
+
+  //     await fs.promises.writeFile(outputPath, buffer);
+
+  //     return outputPath;
+  //   } catch (error) {
+  //     this.logger.error('TTS Error', error);
+  //     throw error;
+  //   }
+  // }
+
+
 
   // ────────────────────────────────────────────────────────────
   //  PUBLIC: Service methods
   // ────────────────────────────────────────────────────────────
+
+
+  private async convertTextToSpeech(
+    text: string,
+  ): Promise<string> {
+    try {
+      const outputDir = path.join(
+        process.cwd(),
+        'uploads/audio',
+      );
+
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const fileName = `summary-${Date.now()}.mp3`;
+
+      const filePath = path.join(outputDir, fileName);
+
+      const tts = new edgeTTS.EdgeTTS();
+
+      // Generate speech
+      await tts.ttsPromise(text, filePath);
+
+      return filePath;
+    } catch (error) {
+      throw error;
+    }
+  }
 
   /** POST /voice/upload — transcribe and store */
   async uploadVoice(file: Express.Multer.File, req: any): Promise<{ voiceId: string; transcription: string; createdAt: string, userId: string }> {
@@ -190,17 +263,23 @@ Return ONLY valid JSON, no markdown, no extra text:
 
   /** GET /voice/:voiceId */
   async getVoice(voiceId: string) {
-    const record = await this.voiceModel
+
+    const record: any = await this.voiceModel
       .findOne({ _id: voiceId })
       .select('_id voiceId filename transcription createdAt latestSummary')
       .lean();
+
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
+
     return {
       voiceId: record._id,
       filename: record.filename,
       transcription: record.transcription,
       createdAt: record.createdAt,
-      latestSummary: record.latestSummary,
+      latestSummary: {
+        ...record.latestSummary,
+        audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + record.latestSummary.audioUrl
+      },
     };
   }
 
@@ -233,23 +312,46 @@ Return ONLY valid JSON, no markdown, no extra text:
 
   /** POST /summary — generate and save summary */
   async createSummary(voiceId: string, vitals?: VitalsDto) {
-    const record = await this.voiceModel.findOne({ _id: voiceId }).select('transcription').lean();
-    if (!record) throw new NotFoundException(`No voice record found for voiceId: ${voiceId}`);
+    try {
+      const record = await this.voiceModel.findOne({ _id: voiceId }).select('transcription').lean();
+      if (!record) throw new NotFoundException(`No voice record found for voiceId: ${voiceId}`);
 
-    this.logger.log(`Generating summary for [${voiceId}]`);
-    const summary = await this.generateHealthSummary(record.transcription, vitals);
-    const generatedAt = new Date().toISOString();
-    const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
+      this.logger.log(`Generating summary for [${voiceId}]`);
 
-    await this.voiceModel.updateOne(
-      { _id: voiceId },
-      {
-        $push: { summaries: summaryEntry },
-        $set: { latestSummary: summaryEntry },
-      },
-    );
+      // Generate AI summary
+      const summary = await this.generateHealthSummary(record.transcription, vitals);
 
-    return { voiceId, transcription: record.transcription, summary, generatedAt };
+      const audioUrl = await this.convertTextToSpeech(summary?.clinicalSummary);
+
+      const generatedAt = new Date().toISOString();
+
+      const data: any = await this.cloudinaryService.uploadFile(audioUrl);
+
+      const summaryEntry = {
+        vitals: vitals ?? null,
+        summary,
+        audioUrl: data.name,
+        generatedAt
+      };
+
+      await this.voiceModel.updateOne(
+        { _id: voiceId },
+        {
+          $push: { summaries: summaryEntry },
+          $set: { latestSummary: summaryEntry },
+        },
+      );
+      fs.unlinkSync(audioUrl);
+
+      return {
+        voiceId, transcription: record.transcription, summary: {
+          ...summary,
+          audioUrl: data.url
+        }, generatedAt
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
   /** GET /summary/:voiceId */
@@ -259,6 +361,25 @@ Return ONLY valid JSON, no markdown, no extra text:
       .select('-_id voiceId latestSummary summaries')
       .lean();
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
+
+    record.summaries = record.summaries.map((item: any) => ({
+      ...item,
+      audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + item.audioUrl
+    }));
+  
+    record.latestSummary = {
+      ...record.latestSummary,
+      vitals: record.latestSummary?.vitals ?? null,
+      summary: record.latestSummary?.summary!,
+      generatedAt:
+        record.latestSummary?.generatedAt ?? '',
+
+      audioUrl:
+        'https://res.cloudinary.com/' +
+        process.env.CLOUDINARY_CLOUD_NAME +
+        '/video/upload/' +
+        record.latestSummary?.audioUrl,
+    };
     return record;
   }
 
@@ -276,8 +397,16 @@ Return ONLY valid JSON, no markdown, no extra text:
     // const voiceId = this.generateVoiceId();
     const createdAt = new Date().toISOString();
 
-    const summary = await this.generateHealthSummary(transcription, vitals);
+    const summary: any = await this.generateHealthSummary(transcription, vitals);
+
+    const audioUrl = await this.convertTextToSpeech(summary?.clinicalSummary);
+
+    const data: any = await this.cloudinaryService.uploadFile(audioUrl);
+
+    summary.audioUrl = data?.name
+
     const generatedAt = new Date().toISOString();
+
     const summaryEntry = { vitals: vitals ?? null, summary, generatedAt };
 
     const createVoice = await this.voiceModel.create({

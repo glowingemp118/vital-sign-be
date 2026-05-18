@@ -50,7 +50,10 @@ const audioFileFilter = (_req: any, file: Express.Multer.File, cb: any) => {
 @ApiTags('HealthVoice')
 @Controller('')
 export class HealthVoiceController {
-  constructor(private readonly healthVoiceService: HealthVoiceService) { }
+  constructor(
+    private readonly healthVoiceService: HealthVoiceService
+    
+  ) { }
 
   // ── GET /api/health ─────────────────────────────────────────
   @Get('health')
@@ -88,7 +91,7 @@ export class HealthVoiceController {
 
     if (!file) throw new BadRequestException('No audio file uploaded.');
 
-    return this.healthVoiceService.uploadVoice(file,req);
+    return this.healthVoiceService.uploadVoice(file, req);
   }
 
   // ── GET /api/voice ───────────────────────────────────────────

@@ -15,6 +15,19 @@ export class CloudinaryService {
 
   async uploadFile(file: any) {
     try {
+
+      // CASE 1: Local file path
+      if (typeof file === 'string') {
+        const result = await cloudinary.v2.uploader.upload(file, {
+          resource_type: 'auto',
+        });
+
+        return {
+          url: result.secure_url,
+          name: `v${result.version}/${result.public_id}.${result.format}`,
+        };
+      }
+
       if (!file || !file.buffer) {
         throw new Error('Invalid file upload');
       }
