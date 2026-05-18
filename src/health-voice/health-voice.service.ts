@@ -10,7 +10,6 @@ const FormData = require('form-data');
 import * as fs from 'fs';
 import { Model } from 'mongoose';
 import fetch from 'node-fetch';
-// import Groq from 'groq-sdk';
 import * as edgeTTS from 'node-edge-tts';
 
 import { VitalsDto } from './dto/upload-voice.dto';
@@ -34,11 +33,6 @@ export class HealthVoiceService {
     this.groqKey = this.config.getOrThrow<string>('GROQ_API_KEY');
 
   }
-
-  // private groq = new Groq({
-  //   apiKey: process.env.GROQ_API_KEY,
-  // });
-
 
   // ────────────────────────────────────────────────────────────
   //  PRIVATE: Groq helpers
