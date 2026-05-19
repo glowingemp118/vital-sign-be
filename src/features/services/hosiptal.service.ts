@@ -29,7 +29,6 @@ export class HospitalService {
             const body = req.body;
             const uid = new mongoose.Types.ObjectId(req?.user?._id);
 
-
             validateParams(this.specialistModel.schema, body, {
                 requiredFields: ['doctor_name', 'doctor_email'],
                 allowExtraFields: true,
@@ -80,15 +79,19 @@ export class HospitalService {
             );
 
             let specialist = await this.specialistModel
-                .findOne({ email: doctor_email, user })
+                .findOne({ user: new Types.ObjectId(req?.user?._id) })
                 .exec();
 
             if (!specialist) {
                 specialist = await new this.specialistModel({
                     email: doctor_email,
                     name: doctor_name,
-                    user,
+                    user: new Types.ObjectId(req?.user?._id),
                 }).save();
+            } else {
+                specialist.name = doctor_name;
+                specialist.email = doctor_email;
+                await specialist.save();
             }
 
             return {
@@ -101,14 +104,15 @@ export class HospitalService {
             throw new Error(error?.message);
         }
     }
-    async getHospitalWithSpecialist(
-        userId: mongoose.Types.ObjectId,
-    ) {
+    async getHospitalWithSpecialist(userId: mongoose.Types.ObjectId) {
         try {
+            console.log("userId=======>", userId);
 
             const hospitals = await this.hospitalUserModel.aggregate(GetHospitals(userId));
 
             const specialist = await this.specialistModel.findOne({ user: new Types.ObjectId(userId) });
+
+            console.log("specialist=======>", specialist);
 
             return {
                 hospitals,
