@@ -18,7 +18,7 @@ export class NotificationService {
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>, // Optional: if you want to check user validity
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
-  ) {}
+  ) { }
   VITAL_NOTIFICATION_TEMPLATES: any = {
     low: (vitalName: string, value: string) => ({
       title: `Health Alert — Check In Required`,
@@ -120,6 +120,9 @@ export class NotificationService {
   }
 
   async deleteAllNotifications(userId: string) {
+
+    console.log("userId=======>", userId);
+    
     await this.notificationModel.deleteMany({ user: userId }).exec();
     return { message: 'All notifications deleted successfully' };
   }

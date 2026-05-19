@@ -35,6 +35,12 @@ export class NotificationController {
     return this.service.markAllAsRead(userId);
   }
 
+  @Delete('/all')
+  deleteall(@Req() req: any) {
+    const userId = req.user._id;
+    return this.service.deleteAllNotifications(userId);
+  }
+
   @Delete('/:notificationId')
   deletenotification(
     @Param('notificationId') notificationId: string,
@@ -43,11 +49,7 @@ export class NotificationController {
     const userId = req.user._id;
     return this.service.deleteNotification(notificationId, userId);
   }
-  @Delete('/all')
-  deleteall(@Req() req: any) {
-    const userId = req.user._id;
-    return this.service.deleteAllNotifications(userId);
-  }
+
 
   @Put("/update-status/:notificationId")
   updateStatus(
