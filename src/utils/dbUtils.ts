@@ -398,7 +398,7 @@ export const chatPipeline = (userId: any, keyword?: string) => {
       }
     },
     {
-      $unwind:{
+      $unwind: {
         path: "$voice",
         preserveNullAndEmptyArrays: true
       }
@@ -445,7 +445,7 @@ export const recordsPipeline = (search: string) => {
     ? processValue(search?.trim()?.toLocaleLowerCase(), 'hash')
     : search;
   return [
-    { $sort: { recorded_at: -1 } },
+    { $sort: { recorded_at: -1, user: 1 } },
     {
       $group: {
         _id: '$user',
