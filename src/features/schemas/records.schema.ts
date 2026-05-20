@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type RecordDocument = Record & Document;
 
-@Schema()
+@Schema({})
 export class Record {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
@@ -22,3 +22,5 @@ export class Record {
 }
 
 export const RecordSchema = SchemaFactory.createForClass(Record);
+
+RecordSchema.index({ user: 1, recorded_at: -1 });
