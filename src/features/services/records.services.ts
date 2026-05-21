@@ -68,19 +68,6 @@ export class RecordService {
         type: 'vital',
         object: object,
       });
-      // await this.notificationModel.create({
-      //   user: userId,
-      //   title,
-      //   message,
-      //   isRead: false,
-      //   type: 'vital',          // matches your Notification.type field
-      //   object: {               // matches your Notification.object field
-      //     vitalId: vitalDoc._id,
-      //     vitalKey: vitalDoc.key,
-      //     value,
-      //     status: vstatus,
-      //   },
-      // });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
       console.error(
@@ -298,6 +285,7 @@ export class RecordService {
         results.push(res.value);
       }
     }
+
     const homeRes = await this.homeRecords({ user });
     return homeRes;
   }
@@ -767,4 +755,87 @@ export class RecordService {
       throw new Error(error?.message);
     }
   }
+  // private async maybeSendDoctorAlert(user: any): Promise<void> {
+  //   try {
+  //     const CRITICAL_STATUSES = ['high', 'low', 'critical', 'danger']; // adjust to your status values
+
+  //     // Pull the user's current alert doc
+  //     const alertDoc = await this.alertModel.findOne({ user: user._id }).exec();
+  //     if (!alertDoc || !alertDoc.alerts?.length) return;
+
+  //     const criticalAlerts = alertDoc.alerts.filter((a) =>
+  //       CRITICAL_STATUSES.includes(a.status?.toLowerCase()),
+  //     );
+  //     if (!criticalAlerts.length) return;
+
+  //     // Fetch full user + doctor details (adjust field names to your schema)
+  //     const userDoc = await this.userModel
+  //       .findById(user._id)
+  //       .populate('doctor') // adjust if your relation is named differently
+  //       .exec();
+
+  //     if (!userDoc?.doctor?.email) return;
+
+  //     // Fetch all vitalDocs to get display names for the alerts
+  //     const vitalKeys = criticalAlerts.map((a) => a.vital);
+  //     const vitalDocs: Vital[] = await this.vitalModel
+  //       .find({ key: { $in: vitalKeys } })
+  //       .exec();
+  //     const vitalNameMap = Object.fromEntries(
+  //       vitalDocs.map((v) => [v.key, v.name ?? v.key]),
+  //     );
+
+  //     // Build the alerts payload
+  //     const alertsPayload = alertDoc.alerts.map((a) => ({
+  //       name: vitalNameMap[a.vital] ?? a.vital,
+  //       value: a.label ?? String(a.value ?? ''),
+  //       recorded_at: a.recorded_at
+  //         ? new Date(a.recorded_at).toISOString()
+  //         : new Date().toISOString(),
+  //       status: (a.status ?? 'UNKNOWN').toUpperCase(),
+  //     }));
+
+  //     await sendEmail({
+  //       to: userDoc.doctor.email,
+  //       subject: `⚠️ Critical Vitals Alert — ${userDoc.name ?? 'Your Patient'}`,
+  //       type: 'alert',
+  //       data: {
+  //         patient: {
+  //           name: userDoc.name ?? 'Unknown',
+  //           age: userDoc.age ?? null,
+  //           email: userDoc.email ?? '',
+  //         },
+  //         doctor: {
+  //           name: userDoc.doctor.name ?? '',
+  //           email: userDoc.doctor.email,
+  //         },
+  //         hospital: {
+  //           name: userDoc.hospital?.name ?? '',
+  //           address: userDoc.hospital?.address ?? '',
+  //           mapsUrl: userDoc.hospital?.mapsUrl ?? '#',
+  //         },
+  //         comment: buildCommentFromAlerts(criticalAlerts, vitalNameMap),
+  //         alerts: alertsPayload,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     // Non-fatal: log but don't crash the bulk response
+  //     console.error('maybeSendDoctorAlert error:', error?.message);
+  //   }
+  //   function buildCommentFromAlerts(
+  //     criticalAlerts: any[],
+  //     vitalNameMap: Record<string, string>,
+  //   ): string {
+  //     const names = criticalAlerts.map(
+  //       (a) => `${vitalNameMap[a.vital] ?? a.vital} (${a.status})`,
+  //     );
+
+  //     if (names.length === 1) {
+  //       return `${names[0]} detected — please review the patient's latest vitals.`;
+  //     }
+
+  //     const last = names.pop();
+  //     return `${names.join(', ')} and ${last} detected — please review the patient's latest vitals.`;
+  //   }
+  // }
 }

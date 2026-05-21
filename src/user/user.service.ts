@@ -29,6 +29,7 @@ import {
 } from 'src/utils/dbUtils';
 import { Appointment } from 'src/features/schemas/appointments.schema';
 import { ContactType } from 'src/contact-type/schemas/contac-type.schema';
+import { sendEmail } from 'src/utils/email/emailUtils';
 
 @Injectable()
 export class UserService {
@@ -39,7 +40,7 @@ export class UserService {
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
     @InjectModel(Appointment.name) private appointmentModel: Model<any>,
     @InjectModel(ContactType.name) private contactTypeModel: Model<ContactType>,
-  ) { }
+  ) {}
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
   };
@@ -49,7 +50,15 @@ export class UserService {
   // Create user and save it to the database
   async createUser(dto: CreateUserDto): Promise<any> {
     try {
-      let { name, email, phone, password, user_type, timezone, medicalConditions } = dto;
+      let {
+        name,
+        email,
+        phone,
+        password,
+        user_type,
+        timezone,
+        medicalConditions,
+      } = dto;
       email = email ? email.toLowerCase().trim() : ''; // Ensure email is defined
       if (user_type === UserType.Doctor) {
         validateParams(this.doctorModel.schema, dto, {
@@ -92,6 +101,16 @@ export class UserService {
         : new this.userModel(userData);
 
       let savedUser: any = await user.save();
+      await sendEmail({
+        to: user.email,
+        subject: 'Email Verification OTP',
+        type: 'otp',
+        data: {
+          user: { name: user.name, email: user.email },
+          otp: user.otp,
+          expiresInMinutes: 15,
+        },
+      });
       if (dto?.device_id && dto?.device_type) {
         await this.upsertDevice(savedUser._id, dto.device_id, dto.device_type);
       }
@@ -252,6 +271,16 @@ export class UserService {
     user.otp = otp;
     user.expiry = { otp: this.expiryTime(), reset: null }; // Set OTP expiry to 15 minutes from now
     await user.save(); // Save the OTP to the user
+    await sendEmail({
+      to: user.email,
+      subject: 'Email Verification OTP',
+      type: 'otp',
+      data: {
+        user: { name: user.name, email: user.email },
+        otp: otp,
+        expiresInMinutes: 15,
+      },
+    });
     return { otp };
   }
 
@@ -409,10 +438,10 @@ export class UserService {
   // Soft delete a user by updating status to 'deleted'
   async softDeleteUser(userId: string) {
     try {
+      const user: any = await this.userModel.findById(userId);
 
-      const user:any = await this.userModel.findById(userId);
-
-      const newEmail = user.email.split('@')[0] + '-deleted' + '@' + user.email.split('@')[1]
+      const newEmail =
+        user.email.split('@')[0] + '-deleted' + '@' + user.email.split('@')[1];
 
       if (!user) {
         throw new UnauthorizedException('User not found');
@@ -428,7 +457,7 @@ export class UserService {
           status: 'deleted',
           is_verified: false,
           previousEmail: user.email,
-          email: newEmail
+          email: newEmail,
         },
         { new: true },
       );
@@ -544,31 +573,30 @@ export class UserService {
 
         data: await Promise.all(
           result?.data?.map(async (r: any) => {
-
             let contactType = await this.contactTypeModel.aggregate([
               {
                 $match: {
                   $expr: {
-                    $eq: ['$user', new mongoose.Types.ObjectId(r?._id)]
-                  }
-                }
+                    $eq: ['$user', new mongoose.Types.ObjectId(r?._id)],
+                  },
+                },
               },
               {
                 $project: {
                   type: 1,
-                  contact: 1
-                }
-              }
+                  contact: 1,
+                },
+              },
             ]);
 
             delete r?.hashes;
 
             return {
               ...processObject(r, 'decrypt'),
-              contactType
+              contactType,
             };
-          })
-        )
+          }),
+        ),
       };
 
       return fres;

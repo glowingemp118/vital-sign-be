@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production  # Specify the environment to use the secrets
+    environment: production
 
     steps:
       - name: Checkout code
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: "22.x"  # Latest Node.js 22.x version
+          node-version: '22.x'
 
       - name: Install dependencies
         run: |
@@ -27,25 +27,33 @@ jobs:
         run: |
           npm run build
 
-      - name: Deploy to EC2
+      - name: Deploy updated files to EC2 (exclude node_modules)
         env:
-          HOST: ${{ secrets.HOST }}  # EC2 instance DNS
+          HOST: ${{ secrets.HOST }}
           USER: ${{ secrets.USER }}
         run: |
           # Save SSH key to file
           echo "${{ secrets.SSH_SECRET_KEY }}" > key.pem
           chmod 600 key.pem
 
-          # Rsync to the instance
-          rsync -az --no-perms --no-times -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./lib ./package.json $USER@$HOST:/home/ubuntu/vital-signs
+          # Rsync everything except node_modules
+          rsync -az --update \
+          --exclude 'node_modules' \
+          --exclude '.git' \
+          --exclude '.github' \
+          --exclude '.env' \
+          --exclude '.prettierrc' \
+          --exclude 'tsconfig*.json' \
+          --exclude 'README.md' \
+          --exclude 'vercel.json' \
+          -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./ $USER@$HOST:/home/ubuntu/vital-signs
 
-          # Connect to EC2 instance and ensure PM2 starts the app
+          # Restart app on EC2 using the new build in lib
           ssh -i key.pem -o StrictHostKeyChecking=no $USER@$HOST << 'EOF'
             cd /home/ubuntu/vital-signs
-            # Check if the app is running, start if not
             if ! pm2 list | grep -q 'app'; then
               echo "Starting the app with PM2"
-              pm2 start lib/main.js --name app  # Replace with your app's entry point
+              pm2 start lib/main.js --name app
             else
               echo "App already running, restarting..."
               pm2 restart all

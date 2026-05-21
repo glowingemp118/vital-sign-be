@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>{{EMAIL_SUBJECT}} - MEXIDOC</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .container {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        .stack {
+          display: block !important;
+          width: 100% !important;
+        }
+        .px {
+          padding-left: 16px !important;
+          padding-right: 16px !important;
+        }
+        .tcenter {
+          text-align: center !important;
+        }
+        .title {
+          font-size: 34px !important;
+          line-height: 38px !important;
+        }
+        .card {
+          padding: 4px !important;
+        }
+        .meta-cell {
+          border-right: none !important;
+          border-bottom: 1px solid #141b29 !important;
+        }
+        .hide-mob {
+          display: none !important;
+        }
+        .maps-btn-td {
+          display: block !important;
+          width: 100% !important;
+          padding: 0 14px 14px 14px !important;
+          text-align: left !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #05070f;
+      font-family: Arial, Helvetica, sans-serif;
+    "
+  >
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      bgcolor="#05070f"
+    >
+      <tr>
+        <td align="center" style="padding: 0">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            class="container"
+            bgcolor="#070b16"
+            style="
+              width: 100%;
+              max-width: 100%;
+              border-left: 1px solid #161e30;
+              border-right: 1px solid #161e30;
+            "
+          >
+            <tr>
+              <td align="center">
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="max-width: 100%; width: 100%"
+                >
+                  <!-- TOP BAR -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="
+                        padding: 22px 40px 12px 40px;
+                        background-color: #110810;
+                      "
+                    >
+                      <table
+                        width="100%"
+                        role="presentation"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                      >
+                        <tr>
+                          <td
+                            class="stack tcenter"
+                            style="vertical-align: middle"
+                          >
+                            <span
+                              style="
+                                color: #ff2458;
+                                font-size: 15px;
+                                font-weight: bold;
+                              "
+                              >+&nbsp;</span
+                            ><span
+                              style="
+                                color: #ffffff;
+                                font-size: 16px;
+                                font-weight: bold;
+                                letter-spacing: 0.5px;
+                              "
+                              >MEXI</span
+                            ><span
+                              style="
+                                color: #ff2458;
+                                font-size: 16px;
+                                font-weight: bold;
+                                letter-spacing: 0.5px;
+                              "
+                              >DOC</span
+                            >
+                          </td>
+                          <td
+                            class="stack tcenter"
+                            align="right"
+                            style="padding-top: 2px; vertical-align: middle"
+                          >
+                            <span
+                              style="display:inline-block;background-color:#{{BADGE_BG}};color:#{{BADGE_COLOR}};padding:6px 13px;font-size:9px;font-weight:bold;border-radius:5px;border:1px solid #{{BADGE_BORDER}};letter-spacing:1.5px;"
+                            >
+                              {{BADGE_TEXT}}
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- TITLE BLOCK + HEARTBEAT -->
+                  <tr>
+                    <td class="px" style="background-color: #070b16">
+                      <div style="padding: 0 40px 0 40px">
+                        <div
+                          class="title"
+                          style="
+                            font-size: 50px;
+                            line-height: 52px;
+                            font-weight: bold;
+                            color: #e8183a;
+                            letter-spacing: 0px;
+                            font-style: normal;
+                            padding-top: 4px;
+                          "
+                        >
+                          {{HEADER_TITLE}}
+                        </div>
+                        <div
+                          style="
+                            padding-top: 5px;
+                            padding-bottom: 10px;
+                            color: #4e5668;
+                            font-size: 10px;
+                            letter-spacing: 1.5px;
+                            font-weight: bold;
+                          "
+                        >
+                          {{HEADER_SUBTITLE}}
+                        </div>
+                      </div>
+
+                      <table
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        role="presentation"
+                        style="margin-top: 30px"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              height: 1px;
+                              background-color: #1a2236;
+                              font-size: 0;
+                              line-height: 0;
+                            "
+                          >
+                            &nbsp;
+                          </td>
+                        </tr>
+                      </table>
+
+                      <table
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        role="presentation"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              padding: 0;
+                              background-color: #110810;
+                              font-size: 0;
+                              line-height: 0;
+                            "
+                          >
+                            <svg
+                              width="100%"
+                              height="60"
+                              viewBox="0 0 600 60"
+                              xmlns="http://www.w3.org/2000/svg"
+                              preserveAspectRatio="none"
+                            >
+                              <line
+                                x1="0"
+                                y1="30"
+                                x2="600"
+                                y2="30"
+                                stroke="#2a1824"
+                                stroke-width="1"
+                              />
+                              <polyline
+                                points="
+                              0,30
+                              30,30 45,30 52,30 58,10 64,50 70,5 76,55 84,30 100,30
+                              130,30 145,30 152,30 158,10 164,50 170,5 176,55 184,30 200,30
+                              230,30 245,30 252,30 258,10 264,50 270,5 276,55 284,30 300,30
+                              330,30 345,30 352,30 358,10 364,50 370,5 376,55 384,30 400,30
+                              430,30 445,30 452,30 458,10 464,50 470,5 476,55 484,30 500,30
+                              600,30"
+                                fill="none"
+                                stroke="#d61f3d"
+                                stroke-width="2.2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              />
+                            </svg>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <table
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        role="presentation"
+                        style="margin-top: 10px"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              height: 1px;
+                              background-color: #1a2236;
+                              font-size: 0;
+                              line-height: 0;
+                            "
+                          >
+                            &nbsp;
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- META ROW -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="padding: 0; background-color: #070b16"
+                    >
+                      <table
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        role="presentation"
+                        style="
+                          background-color: #08101c;
+                          border: 1px solid #141f32;
+                          border-bottom: transparent;
+                          border-left: transparent;
+                          border-right: transparent;
+                        "
+                      >
+                        <tr>
+                          <td
+                            class="stack meta-cell"
+                            width="25%"
+                            align="center"
+                            style="
+                              padding: 13px 10px;
+                              border-right: 1px solid #141f32;
+                            "
+                          >
+                            <table
+                              role="presentation"
+                              cellpadding="15px"
+                              cellspacing="0"
+                              border="0"
+                              align="center"
+                            >
+                              <tr>
+                                <td style="text-align: left">
+                                  <div
+                                    style="
+                                      color: #2e3a52;
+                                      font-size: 9px;
+                                      letter-spacing: 1px;
+                                      padding-bottom: 4px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    FROM
+                                  </div>
+                                  <div
+                                    style="
+                                      color: #c5cade;
+                                      font-size: 10px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    {{META_FROM}}
+                                  </div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+
+                          <td
+                            class="stack meta-cell"
+                            width="25%"
+                            align="center"
+                            style="
+                              padding: 13px 10px;
+                              border-right: 1px solid #141f32;
+                            "
+                          >
+                            <table
+                              role="presentation"
+                              cellpadding="0"
+                              cellspacing="0"
+                              border="0"
+                              align="center"
+                            >
+                              <tr>
+                                <td style="text-align: left">
+                                  <div
+                                    style="
+                                      color: #2e3a52;
+                                      font-size: 9px;
+                                      letter-spacing: 1px;
+                                      padding-bottom: 4px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    TO
+                                  </div>
+                                  <div
+                                    style="
+                                      color: #c5cade;
+                                      font-size: 10px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    {{META_TO}}
+                                  </div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+
+                          <td
+                            class="stack meta-cell"
+                            width="25%"
+                            align="center"
+                            style="
+                              padding: 13px 10px;
+                              border-right: 1px solid #141f32;
+                            "
+                          >
+                            <table
+                              role="presentation"
+                              cellpadding="0"
+                              cellspacing="0"
+                              border="0"
+                              align="center"
+                            >
+                              <tr>
+                                <td style="text-align: left">
+                                  <div
+                                    style="
+                                      color: #2e3a52;
+                                      font-size: 9px;
+                                      letter-spacing: 1px;
+                                      padding-bottom: 4px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    TYPE
+                                  </div>
+                                  <div
+                                    style="color:#{{META_TYPE_COLOR}};font-size:10px;font-weight:bold;"
+                                  >
+                                    {{META_TYPE}}
+                                  </div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+
+                          <td
+                            class="stack meta-cell"
+                            width="25%"
+                            align="center"
+                            style="
+                              padding: 13px 10px;
+                              border-right: 1px solid #141f32;
+                            "
+                          >
+                            <table
+                              role="presentation"
+                              cellpadding="0"
+                              cellspacing="0"
+                              border="0"
+                              align="center"
+                            >
+                              <tr>
+                                <td style="text-align: left">
+                                  <div
+                                    style="
+                                      color: #2e3a52;
+                                      font-size: 9px;
+                                      letter-spacing: 1px;
+                                      padding-bottom: 4px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    TIME
+                                  </div>
+                                  <div
+                                    style="
+                                      color: #c5cade;
+                                      font-size: 10px;
+                                      font-weight: bold;
+                                    "
+                                  >
+                                    {{META_TIME}}
+                                  </div>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- INTRO TEXT -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="
+                        padding: 20px 40px 0 40px;
+                        color: #b0b6c8;
+                        font-size: 13px;
+                        line-height: 24px;
+                        background-color: #070b16;
+                      "
+                    >
+                      {{INTRO_TEXT}}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding-top: 40px">
+                      <div style="border: 1px solid #141f32"></div>
+                    </td>
+                  </tr>
+
+                  <!-- DYNAMIC CONTENT BLOCK -->
+                  <!-- Supports: OTP box, Appointment details, Patient/Vitals table, or any custom HTML -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="
+                        padding: 26px 40px 0 40px;
+                        background-color: #070b16;
+                      "
+                    >
+                      {{CONTENT}}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding-top: 40px">
+                      <div style="border: 1px solid #141f32"></div>
+                    </td>
+                  </tr>
+
+                  <!-- FOOTER NOTE / DISCLAIMER -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="
+                        padding: 20px 40px 6px 40px;
+                        color: #363e52;
+                        font-size: 10px;
+                        line-height: 18px;
+                        background-color: #070b16;
+                      "
+                    >
+                      <strong style="color: #404a60">Note:</strong>
+                      {{FOOTER_NOTE}}
+                    </td>
+                  </tr>
+
+                  <!-- FOOTER -->
+                  <tr>
+                    <td
+                      class="px"
+                      style="
+                        border-top: 1px solid #0e1628;
+                        padding: 14px 40px 16px 40px;
+                        background-color: #070b16;
+                      "
+                    >
+                      <table
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        role="presentation"
+                      >
+                        <tr>
+                          <td
+                            class="stack tcenter"
+                            style="vertical-align: middle"
+                          >
+                            <span
+                              style="
+                                color: #ffffff;
+                                font-size: 18px;
+                                font-weight: bold;
+                              "
+                              >MEXI</span
+                            ><span
+                              style="
+                                color: #ff2458;
+                                font-size: 18px;
+                                font-weight: bold;
+                              "
+                              >DOC</span
+                            >
+                          </td>
+                          <td
+                            class="stack"
+                            align="right"
+                            style="text-align: right; vertical-align: middle"
+                          >
+                            <div
+                              style="
+                                color: #28304a;
+                                font-size: 9px;
+                                letter-spacing: 1px;
+                                padding-bottom: 5px;
+                                font-weight: bold;
+                              "
+                            >
+                              AUTOMATED HEALTH MONITORING
+                            </div>
+                            <div>
+                              <a
+                                href="#"
+                                style="
+                                  color: #28304a;
+                                  font-size: 9px;
+                                  text-decoration: none;
+                                  letter-spacing: 1px;
+                                  font-weight: bold;
+                                "
+                                >UNSUBSCRIBE</a
+                              >
+                              <span style="color: #1c2438; padding: 0 4px"
+                                >&middot;</span
+                              >
+                              <a
+                                href="#"
+                                style="
+                                  color: #28304a;
+                                  font-size: 9px;
+                                  text-decoration: none;
+                                  letter-spacing: 1px;
+                                  font-weight: bold;
+                                "
+                                >PRIVACY</a
+                              >
+                            </div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
