@@ -4,6 +4,7 @@ import {
   buildAlertEmail,
   buildAppointmentEmail,
 } from './email_builder';
+
 export async function sendEmail({
   to,
   subject,
@@ -17,11 +18,11 @@ export async function sendEmail({
   type: 'otp' | 'appointment' | 'alert';
   isHtml?: boolean;
 }) {
-  const SENDGRID_API_KEY =
-    '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';
-  const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
-  const SENDGRID_SENDER_EMAIL = 'info@vitals-signs.com';
-  const SENDGRID_SENDER_NAME = 'Vital Signs';
+  const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+  const SENDGRID_API_URL: any = process.env.SENDGRID_API_URL;
+  const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL;
+  const SENDGRID_SENDER_NAME = process.env.SENDGRID_SENDER_NAME;
+
   const message = buildEmailContent(data, type);
   const payload = {
     personalizations: [
