@@ -34,8 +34,14 @@ import { HospitalController } from './controllers/hospital.controller';
 import { HospitalService } from './services/hosiptal.service';
 import { Hospital, HospitalSchema } from './schemas/hospital.schema';
 import { Specialist, SpecialistSchema } from './schemas/specialist.schema';
-import { HospitalUser, HospitalUserSchema } from './schemas/HospitalUser.schema';
-import { Transcription, TranscriptionSchema } from './schemas/transcription.schema';
+import {
+  HospitalUser,
+  HospitalUserSchema,
+} from './schemas/HospitalUser.schema';
+import {
+  Transcription,
+  TranscriptionSchema,
+} from './schemas/transcription.schema';
 import { TranscriptionController } from './controllers/transcription.controller';
 import { TranscriptionService } from './services/transcription.services';
 import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
@@ -70,7 +76,7 @@ import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
     DoctorController,
     DashboardController,
     HospitalController,
-    TranscriptionController
+    TranscriptionController,
   ],
   providers: [
     DoctorService,
@@ -80,8 +86,8 @@ import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
     NotificationService,
     DashboardService,
     HospitalService,
-    TranscriptionService
+    TranscriptionService,
   ],
   exports: [NotificationService],
 })
-export class FeaturesModule { }
+export class FeaturesModule {}

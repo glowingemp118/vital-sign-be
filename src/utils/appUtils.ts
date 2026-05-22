@@ -1,7 +1,7 @@
 import { UserType } from '../user/dto/user.dto';
-import { processObject } from './encrptdecrpt';
+import { processObject, processValue } from './encrptdecrpt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import mongoose from 'mongoose';
+import mongoose, { ObjectId, Types } from 'mongoose';
 
 export const modifiedUser = (user: any) => {
   const { password, hashes, roles, ...rest } =
@@ -162,5 +162,75 @@ export function getVitalMessage(
     status,
     label: copy.label(vital.title),
     message: copy.message(vital.title, value, vital.unit),
+  };
+}
+
+export function getTodayBoundary(timezone: string) {
+  const start = new Date(
+    new Date().toLocaleDateString('en-CA', { timeZone: timezone }) +
+      'T00:00:00.000Z',
+  );
+  return { start, end: new Date(start.getTime() + 86_400_000) };
+}
+
+export function dedupeByVital(bodies: any[]) {
+  // latest record per vital wins
+  const map = new Map<string, any>();
+  for (const b of bodies.sort(
+    (a, b) =>
+      new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
+  )) {
+    if (!map.has(b.vital)) map.set(b.vital, b);
+  }
+  return [...map.values()];
+}
+
+export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
+  const value = processValue(String(body.value), 'encrypt');
+  const status = body.vstatus !== 'unknown' ? body.vstatus : 'not-measured';
+  const recorded_at = new Date(body.recorded_at);
+
+  if (existing) {
+    if (existing.value === value && existing.status === status) return null;
+    return {
+      isNew: false,
+      statusChanged: existing.status !== status, // ← did severity change?
+      op: {
+        updateOne: {
+          filter: { _id: existing._id },
+          update: { $set: { value, status, recorded_at } },
+        },
+      },
+    };
+  }
+
+  return {
+    isNew: true,
+    statusChanged: false,
+    op: {
+      insertOne: {
+        document: {
+          user: uid,
+          vital: new Types.ObjectId(body.vital),
+          recorded_at,
+          value,
+          status,
+        },
+      },
+    },
+  };
+}
+
+export function buildAlertEntry(vitalDoc: any, body: any) {
+  if (['normal', 'unknown'].includes(body.vstatus)) return null; // no alert needed
+  const msg = getVitalMessage(vitalDoc, body.value, body.vstatus);
+  if (!msg) return null;
+  return {
+    vital: vitalDoc.key,
+    status: body.vstatus,
+    label: msg.label,
+    message: msg.message,
+    value: body.value,
+    recorded_at: new Date(body.recorded_at),
   };
 }

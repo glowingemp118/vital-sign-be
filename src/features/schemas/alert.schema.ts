@@ -15,6 +15,7 @@ export class Alert {
         status: String,
         label: String,
         vital: String,
+        value: String,
         recorded_at: Date,
       },
     ],
@@ -25,6 +26,7 @@ export class Alert {
     status: string;
     label: string;
     vital: string;
+    value: string;
     recorded_at: Date;
   }>;
 }

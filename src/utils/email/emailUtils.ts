@@ -18,9 +18,9 @@ export async function sendEmail({
   isHtml?: boolean;
 }) {
   const SENDGRID_API_KEY =
-    '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';
+    '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';
   const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
-  const SENDGRID_SENDER_EMAIL = 'novashield.us@gmail.com';
+  const SENDGRID_SENDER_EMAIL = 'info@vitals-signs.com';
   const SENDGRID_SENDER_NAME = 'Vital Signs';
   const message = buildEmailContent(data, type);
   const payload = {
@@ -35,7 +35,6 @@ export async function sendEmail({
     // Uncomment this to enable sandbox mode
     // mail_settings: { sandbox_mode: { enable: true } },
   };
-
   try {
     const response = await fetch(SENDGRID_API_URL, {
       method: 'POST',

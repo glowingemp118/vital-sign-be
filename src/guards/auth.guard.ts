@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { Reflector } from '@nestjs/core';
 import { sign } from 'jsonwebtoken';
+import { processValue } from 'src/utils/encrptdecrpt';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'Some Complex Secrete Value';
 @Injectable()
@@ -69,11 +70,18 @@ export async function validateRefreshToken(token: string): Promise<any> {
   }
 }
 export function generateToken(payload: any, onlyAccessToken = false): any {
-  const { _id, email, user_type, timezone } = payload;
+  const { _id, email, name, user_type, timezone } = payload;
   const result: any = {
     access_token: {
       token: sign(
-        { _id, email, user_type, timezone, is_refresh: false },
+        {
+          _id,
+          email: processValue(email, 'decrypt'),
+          name: processValue(name, 'decrypt'),
+          user_type,
+          timezone,
+          is_refresh: false,
+        },
         JWT_SECRET,
         {
           expiresIn: '1h',
@@ -85,7 +93,7 @@ export function generateToken(payload: any, onlyAccessToken = false): any {
   if (!onlyAccessToken) {
     result.refresh_token = {
       token: sign(
-        { _id, email, user_type, timezone, is_refresh: true },
+        { _id, email, name, user_type, timezone, is_refresh: true },
         JWT_SECRET,
         {
           expiresIn: '1d',

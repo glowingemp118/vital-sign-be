@@ -40,7 +40,7 @@ try {
 function buildEmail(vars: Record<string, string>): string {
   return Object.entries({
     ...vars,
-    META_FROM: 'novashield.us@gmail.com',
+    META_FROM: 'info@vitals-signs.com',
   }).reduce(
     (html, [key, value]) => html.replaceAll(`{{${key}}}`, value ?? ''),
     htmlTemplate,
@@ -255,30 +255,40 @@ export function buildAlertEmail({
   comment?: string;
 }) {
   // Build vital cards (first 3 alerts shown as cards, rest in table)
-  const cardAlerts = alerts.slice(0, 3);
-  const tableAlerts = alerts.slice(3);
+  const MAX_CARDS = 4;
+  const cardAlerts = alerts.slice(0, MAX_CARDS);
+  const tableAlerts = alerts.slice(MAX_CARDS);
 
   const statusStyle = (status = '') => {
     const s = status.toUpperCase();
+
+    if (s === 'CRITICAL')
+      return {
+        bg: '1a0505',
+        color: 'ff6000',
+        border: '6b1a00',
+        icon: '&#9888;', // ⚠ warning triangle
+      };
     if (s === 'HIGH')
       return {
         bg: '260c16',
         color: 'ff3c63',
         border: '501028',
-        icon: '&#9650;',
+        icon: '&#9650;', // ▲ up arrow
       };
     if (s === 'LOW')
       return {
         bg: '091828',
         color: '3c9fff',
         border: '104060',
-        icon: '&#9660;',
+        icon: '&#9660;', // ▼ down arrow
       };
+    // NORMAL
     return {
       bg: '081a10',
       color: '1cff84',
       border: '0e4022',
-      icon: '&#10003;',
+      icon: '&#10003;', // ✓ checkmark
     };
   };
 
@@ -357,8 +367,8 @@ export function buildAlertEmail({
           <div style="color:#ffffff;font-size:24px;font-weight:bold;">${patient.name}</div>
         </td>
         <td class="stack" width="50%" align="right" valign="bottom" style="padding-bottom:3px;">
-          <div style="color:#3a4459;font-size:9px;letter-spacing:1px;padding-bottom:3px;font-weight:bold;text-align:right;">AGE</div>
-          <div style="color:#c8ccda;font-size:14px;font-weight:bold;text-align:right;">${patient?.age ?? 'N/A'} years old</div>
+        <div style="color:#3a4459;font-size:9px;letter-spacing:1px;padding-bottom:3px;font-weight:bold;text-align:right;">EMAIL</div>
+          <div style="color:#c8ccda;font-size:14px;font-weight:bold;text-align:right;">${patient?.email ?? 'N/A'}</div>
         </td>
       </tr>
     </table>
@@ -434,13 +444,13 @@ export function buildAlertEmail({
         </td>
         <td valign="middle" style="padding:14px 8px;color:#ffffff;font-size:14px;font-weight:bold;">
           ${hospital.name}
-          <div style="font-size:11px;color:#5e6a82;font-weight:normal;padding-top:3px;">${hospital.address ?? ''}</div>
+          <div style="font-size:11px;color:#5e6a82;font-weight:normal;padding-top:3px;">${hospital.location ?? ''}</div>
         </td>
         ${
-          hospital.mapsUrl
+          hospital.areaLevel
             ? `
         <td align="right" valign="middle" style="padding:14px;white-space:nowrap;">
-          <a href="${hospital.mapsUrl}"
+          <a href="${hospital.mapsUrl || '#'}"
             style="display:inline-block;background-color:#0d2d63;color:#7bb3ff;text-decoration:none;padding:8px 15px;font-size:11px;font-weight:bold;border-radius:5px;">
             &#128205; Maps
           </a>
@@ -473,61 +483,3 @@ export function buildAlertEmail({
       'This is an automated recommendation and does not constitute a medical diagnosis. No response is required.',
   });
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-//  USAGE EXAMPLES
-// ════════════════════════════════════════════════════════════════════════════
-
-// -- OTP --
-const otpHtml = buildOtpEmail({
-  user: { name: 'Carlos Rivera', email: 'c.rivera@email.com' },
-  otp: '847291',
-  expiresInMinutes: 10,
-});
-
-// -- Appointment --
-const appointmentHtml = buildAppointmentEmail({
-  patient: { name: 'Carlos Rivera', email: 'c.rivera@email.com' },
-  doctor: { name: 'Sarah Mendez', speciality: 'Cardiologist' },
-  appointment: {
-    date: 'April 14, 2025',
-    time: '10:30 AM',
-    location: 'Hospital General, Room 204',
-    type: 'Follow-up Consultation',
-    notes:
-      'Please bring your last blood pressure log and any recent lab results.',
-  },
-});
-
-// -- Alert --
-const alertHtml = buildAlertEmail({
-  patient: { name: 'Carlos Rivera', age: 52, email: 'c.rivera@email.com' },
-  doctor: { name: 'Sarah Mendez', email: 'dr.mendez@clinic.com' },
-  hospital: {
-    name: 'Hospital General de México',
-    address: 'Dr. Balmis 148, Cuauhtémoc, CDMX',
-    mapsUrl: '#',
-  },
-  comment:
-    'Continuous blood pressure elevation detected over the monitoring period, combined with elevated heart rate.',
-  alerts: [
-    {
-      name: 'Blood Pressure',
-      value: '150/95 mmHg',
-      recorded_at: new Date().toISOString(),
-      status: 'HIGH',
-    },
-    {
-      name: 'Pulse Rate',
-      value: '120 bpm',
-      recorded_at: new Date().toISOString(),
-      status: 'HIGH',
-    },
-    {
-      name: 'SpO2',
-      value: '96%',
-      recorded_at: new Date().toISOString(),
-      status: 'NORMAL',
-    },
-  ],
-});

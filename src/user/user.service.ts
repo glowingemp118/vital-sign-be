@@ -106,7 +106,7 @@ export class UserService {
         subject: 'Email Verification OTP',
         type: 'otp',
         data: {
-          user: { name: user.name, email: user.email },
+          user: { name: name, email: email },
           otp: user.otp,
           expiresInMinutes: 15,
         },
@@ -276,7 +276,10 @@ export class UserService {
       subject: 'Email Verification OTP',
       type: 'otp',
       data: {
-        user: { name: user.name, email: user.email },
+        user: {
+          name: processValue(user.name, 'decrypt'),
+          email: processValue(user.email, 'decrypt'),
+        },
         otp: otp,
         expiresInMinutes: 15,
       },
