@@ -441,8 +441,8 @@ export class UserService {
   // Soft delete a user by updating status to 'deleted'
   async softDeleteUser(userId: string) {
     try {
-      const user: any = await this.userModel.findById(userId);
-
+      let user: any = await this.userModel.findById(userId).lean();
+      user = processObject(user, 'decrypt');
       const newEmail =
         user.email.split('@')[0] + '-deleted' + '@' + user.email.split('@')[1];
 
