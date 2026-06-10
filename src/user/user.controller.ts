@@ -145,4 +145,24 @@ export class UserController {
   async getUsers(@Request() req) {
     return this.userService.getUsers(req);
   }
+
+  @ApiTags('Auth')
+  @Post('webhook/revenuecat')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async handleRevenueCatWebhook(@Request() req, @Body() body: any) {
+    // console.log('Received RevenueCat webhook:', body);
+    const webhookToken = process.env.RC_WEBHOOK_TOKEN;
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || authHeader !== `${webhookToken}`) {
+      return { error: 'Unauthorized' };
+    }
+
+    if (!body.event) {
+      return { error: 'Event not found in request body' };
+    }
+
+    return await this.userService.rcWebhookEvent(body.event);
+  }
 }

@@ -171,6 +171,12 @@ export class UserService {
           signInDto.device_type,
         );
       }
+      if (signInDto?.rc_uid) {
+        await this.userModel.updateOne(
+          { _id: user._id },
+          { rc_uid: signInDto.rc_uid },
+        );
+      }
       const token_res = generateToken(user);
       if (user?.user_type == UserType.Doctor) {
         user = user.toObject();
@@ -605,6 +611,64 @@ export class UserService {
       return fres;
     } catch (err) {
       throw new Error(err?.message);
+    }
+  }
+  async rcWebhookEvent(event: any) {
+    try {
+      const activeEvents = ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION'];
+
+      const {
+        app_user_id: userId,
+        product_id: productId,
+        expiration_at_ms,
+      } = event;
+
+      const expiresAt = expiration_at_ms ? new Date(expiration_at_ms) : null;
+
+      let subscription;
+
+      if (activeEvents.includes(event.type)) {
+        subscription = {
+          isSubscribed: true,
+          subscriptionStatus: 'active',
+          productId,
+          expiresAt,
+        };
+      } else if (event.type === 'CANCELLATION') {
+        subscription = {
+          isSubscribed: true,
+          subscriptionStatus: 'cancelled',
+          productId: null,
+          expiresAt,
+        };
+      } else if (event.type === 'BILLING_ISSUE') {
+        subscription = {
+          isSubscribed: false,
+          subscriptionStatus: 'billing_issue',
+          productId: null,
+          expiresAt: null,
+        };
+      } else if (event.type === 'EXPIRATION') {
+        subscription = {
+          isSubscribed: false,
+          subscriptionStatus: 'inactive',
+          productId: null,
+          expiresAt: null,
+        };
+      } else {
+        console.log('Unhandled RevenueCat event:', event.type);
+        return { success: true, message: 'Unhandled event' };
+      }
+
+      await this.userModel.updateOne({ rc_uid: userId }, { subscription });
+
+      return {
+        success: true,
+        message: 'RevenueCat webhook processed successfully',
+      };
+    } catch (error) {
+      console.error('Error handling RevenueCat webhook:', error);
+      throw error;
     }
   }
 }

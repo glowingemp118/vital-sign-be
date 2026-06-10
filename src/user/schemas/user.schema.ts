@@ -60,7 +60,20 @@ export class User {
 
   @Prop({ type: String })
   previousEmail: {
-    type: String
+    type: String;
+  };
+
+  @Prop({ type: String })
+  rc_uid: {
+    type: String;
+  };
+
+  @Prop({ type: Object, default: {} })
+  subscription: {
+    isSubscribed: boolean;
+    subscriptionStatus: string;
+    productId: string;
+    expiresAt: Date;
   };
 
   @Prop({
@@ -78,7 +91,7 @@ export class User {
       heartCondition: false,
       arrhythmia: false,
       highCholesterol: false,
-      obesity: false
+      obesity: false,
     },
   })
   medicalConditions: {

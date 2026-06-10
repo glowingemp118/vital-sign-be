@@ -35,6 +35,10 @@ export class SignInDto {
   @IsOptional()
   @IsString()
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  rc_uid?: string;
 }
 
 export class CreateUserDto {
@@ -91,10 +95,17 @@ export class CreateUserDto {
   @IsString()
   about?: string;
 
+  @IsObject()
+  @IsOptional()
+  medicalConditions?: object;
 
   @IsObject()
   @IsOptional()
-  medicalConditions?: object
+  subscription?: object;
+
+  @IsOptional()
+  @IsString()
+  rc_uid?: string;
 }
 
 export class UpdateUserDto {
@@ -128,6 +139,13 @@ export class UpdateUserDto {
 
   @IsObject()
   @IsOptional()
-  medicalConditions?: object
+  medicalConditions?: object;
 
+  @IsObject()
+  @IsOptional()
+  subscription?: object;
+
+  @IsOptional()
+  @IsString()
+  rc_uid?: string;
 }
