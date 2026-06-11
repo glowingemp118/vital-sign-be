@@ -12,7 +12,12 @@ import {
   Put,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { SignInDto, CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import {
+  SignInDto,
+  CreateUserDto,
+  UpdateUserDto,
+  SocialAuthDto,
+} from './dto/user.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../decorators/public.decorator';
 
@@ -35,6 +40,14 @@ export class UserController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() signInDto: SignInDto) {
     return await this.userService.signIn(signInDto);
+  }
+
+  @ApiTags('Auth')
+  @Post('social')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async socialAuth(@Body() socialAuthDto: SocialAuthDto) {
+    return await this.userService.socialAuth(socialAuthDto);
   }
 
   // Verify email (now accessible at '/auth/verify-otp')

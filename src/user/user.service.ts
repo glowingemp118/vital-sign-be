@@ -11,6 +11,7 @@ import {
   CreateUserDto,
   UpdateUserDto,
   UserType,
+  SocialAuthDto,
 } from './dto/user.dto';
 import * as bcrypt from 'bcrypt';
 import { generateToken, validateRefreshToken } from '../guards/auth.guard';
@@ -197,6 +198,95 @@ export class UserService {
       };
     } catch (error) {
       throw new UnauthorizedException(error?.message);
+    }
+  }
+
+  async socialAuth(socialAuthDto: SocialAuthDto) {
+    // const session = await this.userModel.db.startSession();
+    // session.startTransaction();
+
+    try {
+      const {
+        provider,
+        socialId,
+        email,
+        name,
+        device_id,
+        device_type,
+        timezone,
+        rc_uid,
+      } = socialAuthDto;
+
+      let user: any = await this.userModel.findOne({ email });
+      const password = await bcrypt.hash('123456', 10);
+      if (user) {
+        if (user.status !== 'active') {
+          throw new UnauthorizedException(`Account is ${user.status}`);
+        }
+
+        const providerIdField = `${provider}Id`;
+
+        if (!user[providerIdField]) {
+          user[providerIdField] = socialId;
+        }
+
+        user.provider = provider;
+
+        if (timezone) {
+          user.timezone = timezone;
+        }
+
+        if (rc_uid) {
+          user.rc_uid = rc_uid;
+        }
+
+        user.is_verified = true;
+
+        await user.save();
+      } else {
+        const providerIdField = `${provider}Id`;
+        user = new this.userModel({
+          name,
+          email,
+          provider,
+          [providerIdField]: socialId,
+          timezone: timezone || 'UTC',
+          is_verified: true,
+          status: 'active',
+          password,
+        });
+
+        await user.save();
+      }
+
+      if (device_id && device_type) {
+        await this.upsertDevice(user._id, device_id, device_type);
+      }
+
+      const token_res = generateToken(user);
+
+      if (user?.user_type === UserType.Doctor) {
+        user = user.toObject();
+
+        const doctor = await this.doctorModel
+          .findOne({ user: user._id })
+          .populate('specialties');
+
+        user.doctor = doctor;
+      }
+
+      // await session.commitTransaction();
+      // session.endSession();
+
+      return {
+        user: modifiedUser(user),
+        token_res,
+      };
+    } catch (error) {
+      // await session.abortTransaction();
+      // session.endSession();
+
+      throw new UnauthorizedException(error?.message || 'Social auth failed');
     }
   }
 

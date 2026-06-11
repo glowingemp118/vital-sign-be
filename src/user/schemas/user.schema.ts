@@ -19,7 +19,7 @@ export class User {
   @Prop({ required: true, minlength: 6 })
   password: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   phone: string;
 
   @Prop({ type: [Number], default: [] })
@@ -102,6 +102,18 @@ export class User {
     highCholesterol: boolean;
     obesity: boolean;
   };
+
+  @Prop({ enum: ['local', 'google', 'facebook', 'apple'], default: 'local' })
+  provider: string;
+
+  @Prop({ type: String, default: null })
+  googleId?: string;
+
+  @Prop({ type: String, default: null })
+  facebookId?: string;
+
+  @Prop({ type: String, default: null })
+  appleId?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

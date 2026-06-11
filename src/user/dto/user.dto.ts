@@ -6,7 +6,7 @@ import {
   IsOptional,
   IsNumber,
   IsArray,
-  isObject,
+  IsNotEmpty,
   IsObject,
 } from 'class-validator';
 
@@ -144,6 +144,38 @@ export class UpdateUserDto {
   @IsObject()
   @IsOptional()
   subscription?: object;
+
+  @IsOptional()
+  @IsString()
+  rc_uid?: string;
+}
+
+export class SocialAuthDto {
+  @IsEnum(['google', 'facebook', 'apple'])
+  provider: 'google' | 'facebook' | 'apple';
+
+  @IsString()
+  @IsNotEmpty()
+  socialId: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  device_id?: string;
+
+  @IsOptional()
+  @IsString()
+  device_type?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 
   @IsOptional()
   @IsString()
