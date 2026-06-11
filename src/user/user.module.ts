@@ -15,7 +15,14 @@ import {
   Appointment,
   AppointmentSchema,
 } from 'src/features/schemas/appointments.schema';
-import { ContactType, ContactTypeSchema } from 'src/contact-type/schemas/contac-type.schema';
+import {
+  ContactType,
+  ContactTypeSchema,
+} from 'src/contact-type/schemas/contac-type.schema';
+import {
+  Notification,
+  NotificationSchema,
+} from 'src/notification/notification.schema';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -24,7 +31,8 @@ import { ContactType, ContactTypeSchema } from 'src/contact-type/schemas/contac-
       { name: Doctor.name, schema: DoctorSchema },
       { name: Speciality.name, schema: SpecialitySchema },
       { name: Appointment.name, schema: AppointmentSchema },
-      {name:ContactType.name,schema:ContactTypeSchema},
+      { name: ContactType.name, schema: ContactTypeSchema },
+      { name: Notification.name, schema: NotificationSchema },
     ]),
     JwtModule.register({
       global: true,

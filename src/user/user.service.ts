@@ -31,6 +31,7 @@ import {
 import { Appointment } from 'src/features/schemas/appointments.schema';
 import { ContactType } from 'src/contact-type/schemas/contac-type.schema';
 import { sendEmail } from 'src/utils/email/emailUtils';
+import { Notification } from 'src/notification/notification.schema';
 
 @Injectable()
 export class UserService {
@@ -41,6 +42,8 @@ export class UserService {
     @InjectModel(Speciality.name) private specialityModel: Model<any>,
     @InjectModel(Appointment.name) private appointmentModel: Model<any>,
     @InjectModel(ContactType.name) private contactTypeModel: Model<ContactType>,
+    @InjectModel(Notification.name)
+    private notificationModel: Model<Notification>,
   ) {}
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
@@ -88,6 +91,7 @@ export class UserService {
 
       const userData: any = {
         ...dto,
+        rc_uid: dto?.rc_uid ? [dto.rc_uid] : [],
         email,
         password: password,
         otp: this.generateOtp(),
@@ -175,7 +179,7 @@ export class UserService {
       if (signInDto?.rc_uid) {
         await this.userModel.updateOne(
           { _id: user._id },
-          { rc_uid: signInDto.rc_uid },
+          { $addToSet: { rc_uid: signInDto.rc_uid } },
         );
       }
       const token_res = generateToken(user);
@@ -236,10 +240,9 @@ export class UserService {
           user.timezone = timezone;
         }
 
-        if (rc_uid) {
-          user.rc_uid = rc_uid;
+        if (rc_uid && !user.rc_uid.includes(rc_uid)) {
+          user.rc_uid.push(rc_uid);
         }
-
         user.is_verified = true;
 
         await user.save();
@@ -292,15 +295,28 @@ export class UserService {
 
   // Update a user's profile
   async updateProfile(id: string, updateUserDto: UpdateUserDto): Promise<any> {
-    // Find the user by ID and update
+    const { rc_uid, ...restUpdateUserDto } = updateUserDto;
+
+    const updateQuery: any = {
+      $set: restUpdateUserDto,
+    };
+
+    if (rc_uid) {
+      updateQuery.$addToSet = {
+        rc_uid,
+      };
+    }
+
     const updatedUser = await this.userModel.findByIdAndUpdate(
       id,
-      updateUserDto,
+      updateQuery,
       { new: true },
     );
+
     if (!updatedUser) {
       throw new UnauthorizedException('User not found');
     }
+
     return { user: modifiedUser(updatedUser) };
   }
 
@@ -557,9 +573,21 @@ export class UserService {
           is_verified: false,
           previousEmail: user.email,
           email: newEmail,
+          rc_uid: [],
         },
         { new: true },
       );
+      await Promise.all([
+        this.deviceModel.deleteOne({ user: user._id }).exec(), // Remove associated devices
+        this.appointmentModel.updateMany(
+          { user: user._id, status: { $ne: 'completed' } },
+          { status: 'cancelled' },
+        ),
+        this.notificationModel.updateMany(
+          { user: user._id },
+          { status: 'deleted' },
+        ),
+      ]);
       return { message: 'User deleted successfully' };
     } catch (error) {
       throw new UnauthorizedException(error?.message);
@@ -750,7 +778,10 @@ export class UserService {
         return { success: true, message: 'Unhandled event' };
       }
 
-      await this.userModel.updateOne({ rc_uid: userId }, { subscription });
+      await this.userModel.updateOne(
+        { rc_uid: { $in: [userId] }, status: 'active' },
+        { subscription },
+      );
 
       return {
         success: true,

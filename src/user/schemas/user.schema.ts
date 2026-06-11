@@ -63,10 +63,8 @@ export class User {
     type: String;
   };
 
-  @Prop({ type: String })
-  rc_uid: {
-    type: String;
-  };
+  @Prop({ type: [String], default: [] })
+  rc_uid: string[];
 
   @Prop({ type: Object, default: {} })
   subscription: {

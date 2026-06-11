@@ -56,7 +56,9 @@ export class TranscriptionService {
   async updateTranscription(req: any) {
     const { id } = req.params;
     const { doctorRecommendation } = req.body;
-
+    if (!doctorRecommendation) {
+      throw new Error('Doctor recommendation is required');
+    }
     const transcription = await this.transcriptionModel.findById(id);
 
     if (!transcription) {
