@@ -177,9 +177,14 @@ export class UserService {
         );
       }
       if (signInDto?.rc_uid) {
-        await this.userModel.updateOne(
-          { _id: user._id },
-          { $addToSet: { rc_uid: signInDto.rc_uid } },
+        user = await this.userModel.findByIdAndUpdate(
+          user._id,
+          {
+            $addToSet: {
+              rc_uid: signInDto.rc_uid,
+            },
+          },
+          { new: true },
         );
       }
       const token_res = generateToken(user);
