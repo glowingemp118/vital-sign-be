@@ -86,11 +86,3 @@ export class Voice {
 
 
 export const VoiceSchema = SchemaFactory.createForClass(Voice);
-
-
-VoiceSchema.virtual('voiceDetails', {
-  ref: 'Transcription',
-  localField: '_id',
-  foreignField: 'voice',
-  justOne: true,
-});
