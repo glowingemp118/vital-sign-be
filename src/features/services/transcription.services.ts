@@ -59,7 +59,13 @@ export class TranscriptionService {
     if (!doctorRecommendation) {
       throw new Error('Doctor recommendation is required');
     }
-    const transcription = await this.transcriptionModel.findById(id);
+    let transcription ;
+
+    transcription= await this.transcriptionModel.findById(id);
+
+    if(!transcription){
+      transcription= await this.transcriptionModel.findOne({voice:new mongoose.Types.ObjectId(id)});
+    }
 
     if (!transcription) {
       throw new Error('Transcription not found');
