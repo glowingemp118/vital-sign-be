@@ -258,18 +258,38 @@ Return ONLY valid JSON, no markdown, no extra text:
   /** GET /voice/:voiceId */
   async getVoice(voiceId: string) {
 
+    // this.voiceModel.virtual('voiceDetails', {
+    //   ref: 'OtherModel',
+    //   localField: 'voiceId',
+    //   foreignField: 'voiceId',
+    //   justOne: true,
+    // });
+
     const record: any = await this.voiceModel
       .findOne({ _id: voiceId })
-      .select('_id voiceId filename transcription createdAt latestSummary')
-      .lean();
+      .select('_id voiceId filename transcription createdAt latestSummary').populate({
+        path: 'voiceDetails',
+        populate: {
+          path: 'doctor',
+          model: 'User', // your User model name,
+          select:"name email profileImage"
+        },
+      })
+      .lean({ virtuals: true });
+
+    console.log("record", record)
+
 
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
+
+
 
     return {
       voiceId: record._id,
       filename: record.filename,
       transcription: record.transcription,
       createdAt: record.createdAt,
+      ...record,
       latestSummary: {
         ...record.latestSummary,
         audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + record.latestSummary.audioUrl
@@ -360,7 +380,7 @@ Return ONLY valid JSON, no markdown, no extra text:
       ...item,
       audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + item.audioUrl
     }));
-  
+
     record.latestSummary = {
       ...record.latestSummary,
       vitals: record.latestSummary?.vitals ?? null,

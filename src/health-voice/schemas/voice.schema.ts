@@ -83,4 +83,14 @@ export class Voice {
   userId: Types.ObjectId;
 }
 
+
+
 export const VoiceSchema = SchemaFactory.createForClass(Voice);
+
+
+VoiceSchema.virtual('voiceDetails', {
+  ref: 'Transcription',
+  localField: '_id',
+  foreignField: 'voice',
+  justOne: true,
+});
