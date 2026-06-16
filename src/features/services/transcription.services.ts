@@ -281,6 +281,11 @@ export class TranscriptionService {
           },
         });
       }
+         pipeline.push({
+        $sort: {
+          createdAt: -1
+        }
+      });
 
       if (pageno && limit) pipeline.push(paginationPipeline({ pageno, limit })); // Pagination
 
