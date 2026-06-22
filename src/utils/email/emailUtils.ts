@@ -38,7 +38,6 @@ export async function sendEmail({
     // mail_settings: { sandbox_mode: { enable: true } },
   };
   try {
-    console.log(`Sending email to ${toEmail} with payload:`, payload);
     const response = await fetch(SENDGRID_API_URL, {
       method: 'POST',
       headers: {
