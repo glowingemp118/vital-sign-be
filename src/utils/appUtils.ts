@@ -59,80 +59,66 @@ type VitalKey =
   | 'respiratoryRate'
   | 'oxygenSaturation'
   | 'bloodGlucose';
-type VitalStatus = 'low' | 'normal' | 'high' | 'critical' | 'unknown';
+type VitalStatus =
+  | 'low'
+  | 'medium'
+  | 'normal'
+  | 'high'
+  | 'critical'
+  | 'unknown';
+type AlertStatus = Exclude<VitalStatus, 'normal' | 'unknown'>;
 export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
+  const num = Number(value);
+
   switch (vital) {
     case 'bloodPressure': {
-      const [systolic, diastolic] = value.split('/').map(Number);
-      if (isNaN(systolic) || isNaN(diastolic)) return 'unknown';
+      const [s, d] = value.split('/').map(Number);
+      if (isNaN(s) || isNaN(d)) return 'unknown';
 
-      // 🚨 CRITICAL
-      if (systolic >= 180 || diastolic >= 120) return 'critical';
-      if (systolic < 70 || diastolic < 40) return 'critical';
-
-      if (systolic < 90 || diastolic < 60) return 'low';
-      if (systolic > 130 || diastolic > 80) return 'high';
-
+      if (s >= 180 || d >= 120 || s < 70 || d < 40) return 'critical';
+      if (s < 90 || d < 60) return 'low';
+      if (s > 140 || d > 90) return 'high';
+      if (s > 120 || d > 80) return 'medium';
       return 'normal';
     }
 
-    case 'heartRate': {
-      const hr = Number(value);
-      if (isNaN(hr)) return 'unknown';
-
-      // 🚨 CRITICAL
-      if (hr < 40 || hr > 130) return 'critical';
-
-      if (hr < 60) return 'low';
-      if (hr > 100) return 'high';
-
+    case 'heartRate':
+      if (isNaN(num)) return 'unknown';
+      if (num < 40 || num > 130) return 'critical';
+      if (num < 60) return 'low';
+      if (num > 110) return 'high';
+      if (num > 100) return 'medium';
       return 'normal';
-    }
 
-    case 'respiratoryRate': {
-      const rr = Number(value);
-      if (isNaN(rr)) return 'unknown';
-
-      // 🚨 CRITICAL
-      if (rr < 8 || rr > 30) return 'critical';
-
-      if (rr < 12) return 'low';
-      if (rr > 20) return 'high';
-
+    case 'respiratoryRate':
+      if (isNaN(num)) return 'unknown';
+      if (num < 8 || num > 30) return 'critical';
+      if (num < 12) return 'low';
+      if (num > 24) return 'high';
+      if (num > 20) return 'medium';
       return 'normal';
-    }
 
-    case 'oxygenSaturation': {
-      const spo2 = Number(value);
-      if (isNaN(spo2)) return 'unknown';
-
-      // 🚨 CRITICAL
-      if (spo2 < 90) return 'critical';
-
-      if (spo2 < 95) return 'low';
-
+    case 'oxygenSaturation':
+      if (isNaN(num)) return 'unknown';
+      if (num < 90) return 'critical';
+      if (num < 92) return 'low';
+      if (num < 95) return 'medium';
       return 'normal';
-    }
 
-    case 'bloodGlucose': {
-      const glucose = Number(value);
-      if (isNaN(glucose)) return 'unknown';
-
-      // 🚨 CRITICAL
-      if (glucose < 54 || glucose > 250) return 'critical';
-
-      if (glucose < 70) return 'low';
-      if (glucose > 100) return 'high';
-
+    case 'bloodGlucose':
+      if (isNaN(num)) return 'unknown';
+      if (num < 54 || num > 250) return 'critical';
+      if (num < 70) return 'low';
+      if (num > 125) return 'high';
+      if (num > 100) return 'medium';
       return 'normal';
-    }
 
     default:
       return 'unknown';
   }
 }
 const STATUS_COPY: Record<
-  Exclude<VitalStatus, 'normal' | 'unknown'>,
+  string,
   {
     label: (title: string) => string;
     message: (title: string, value: string, unit?: string) => string;
@@ -150,6 +136,11 @@ const STATUS_COPY: Record<
     label: (t) => `Critical ${t}`,
     message: (t, v, u) =>
       `Dangerously abnormal ${t.toLowerCase()} detected (${v}${u ? ` ${u}` : ''})`,
+  },
+  medium: {
+    label: (t) => `Medium ${t}`,
+    message: (t, v, u) =>
+      `${t} is moderately abnormal (${v}${u ? ` ${u}` : ''})`,
   },
 };
 export function getVitalMessage(

@@ -177,8 +177,12 @@ export class RecordService {
     vstatus: string,
   ) {
     try {
-      if (vstatus == 'normal' || vstatus == 'unknown') {
-        this.alertModel
+      if (
+        vstatus === 'normal' ||
+        vstatus === 'unknown' ||
+        vstatus === 'not-measured'
+      ) {
+        await this.alertModel
           .updateOne(
             { user: userId },
             { $pull: { alerts: { vital: vitalDoc.key } } },
@@ -186,8 +190,8 @@ export class RecordService {
           .exec();
         return;
       }
+
       const msg = getVitalMessage(vitalDoc, body.value, vstatus);
-      if (!msg) return;
 
       const alert = {
         vital: vitalDoc.key,
@@ -197,14 +201,12 @@ export class RecordService {
         value: body.value,
         recorded_at: body.recorded_at,
       };
+
       const result = await this.alertModel.updateOne(
         { user: userId, 'alerts.vital': vitalDoc.key },
-        {
-          $set: {
-            'alerts.$': alert,
-          },
-        },
+        { $set: { 'alerts.$': alert } },
       );
+
       if (result.matchedCount === 0) {
         await this.alertModel.updateOne(
           { user: userId },
@@ -212,11 +214,10 @@ export class RecordService {
           { upsert: true },
         );
       }
-    } catch (error) {
-      throw new Error(error?.message);
+    } catch (error: any) {
+      throw new Error(error?.message || 'Failed to add alert');
     }
   }
-
   async bulkCreateUpdate(req: any): Promise<any> {
     const uid: any = new Types.ObjectId(req.user._id);
     const timezone = req.user?.timezone || 'UTC';
@@ -278,17 +279,22 @@ export class RecordService {
       const isAbnormal = !['normal', 'unknown', 'not-measured'].includes(
         body.vstatus,
       );
-      if (isAbnormal && (result.isNew || result.statusChanged)) {
+      if (
+        isAbnormal &&
+        body.vstatus !== 'medium' &&
+        (result.isNew || result.statusChanged)
+      ) {
         doctorAlerts.push(body);
       }
       vitalKeysToWipe.push(vitalDoc.key); // always clear old alert
 
       const alertEntry = buildAlertEntry(vitalDoc, body);
       if (alertEntry) alertsToAdd.push(alertEntry); // re-add if abnormal
-
-      notifications.push(
-        this.createVitalNotification(uid, vitalDoc, body.value, body.vstatus),
-      );
+      if (isAbnormal) {
+        notifications.push(
+          this.createVitalNotification(uid, vitalDoc, body.value, body.vstatus),
+        );
+      }
     }
 
     // ── 4. Flush writes ───────────────────────────────────────────────
