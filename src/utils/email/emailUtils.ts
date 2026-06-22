@@ -52,7 +52,7 @@ export async function sendEmail({
         `SendGrid error: ${JSON.stringify(errorData.errors || errorData)}`,
       );
     }
-
+    console.log(`Email sent to ${to} with status ${response.status}`);
     return { success: true, status: response.status };
   } catch (error: any) {
     console.error('Error sending email:', error.message);

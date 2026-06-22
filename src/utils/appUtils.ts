@@ -213,7 +213,8 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
 }
 
 export function buildAlertEntry(vitalDoc: any, body: any) {
-  if (['normal', 'unknown'].includes(body.vstatus)) return null; // no alert needed
+  if (['normal', 'medium', 'unknown', 'not-measured'].includes(body.vstatus))
+    return null; // no alert needed
   const msg = getVitalMessage(vitalDoc, body.value, body.vstatus);
   if (!msg) return null;
   return {
