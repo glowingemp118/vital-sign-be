@@ -17,6 +17,7 @@ import { Voice, VoiceDocument } from './schemas/voice.schema';
 import { Notification, NotificationDocument } from 'src/notification/notification.schema';
 import path from 'path';
 import { CloudinaryService } from 'src/utils/cloudinary';
+import mongoose from 'mongoose';
 
 @Injectable()
 export class HealthVoiceService {
@@ -258,15 +259,74 @@ Return ONLY valid JSON, no markdown, no extra text:
   /** GET /voice/:voiceId */
   async getVoice(voiceId: string) {
 
-    const record: any = await this.voiceModel
-      .findOne({ _id: voiceId })
-      .select('_id voiceId filename transcription createdAt latestSummary')
-      .lean();
+    const records = await this.voiceModel.aggregate([
+      {
+        $match: {
+          $expr: {
+            $eq: [new mongoose.Types.ObjectId(voiceId), "$_id"]
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: "transcriptions",
+          let: { voiceId: "$_id" },
+          as: "voiceDetails",
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: ["$$voiceId", "$voice"]
+                }
+              }
+            }, {
+              $lookup: {
+                from: "users",
+                let: { doctorId: "$doctor" },
+                as: "doctor",
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $eq: ['$$doctorId', "$_id"]
+                      }
+                    }
+                  },
+                  {
+                    $project: {
+                      _id: 1,
+                      name: 1,
+                      email: 1
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              $unwind: {
+                path: "$doctor",
+                preserveNullAndEmptyArrays: true
+              }
+            }
+          ]
+        }
+      },
+      {
+        $unwind: {
+          path: "$voiceDetails",
+          preserveNullAndEmptyArrays: true
+        }
+      }
+    ])
+
+    const record = records?.[0]
 
     if (!record) throw new NotFoundException(`Voice record not found: ${voiceId}`);
 
+
     return {
       voiceId: record._id,
+      _id: record._id,
       filename: record.filename,
       transcription: record.transcription,
       createdAt: record.createdAt,
@@ -274,6 +334,7 @@ Return ONLY valid JSON, no markdown, no extra text:
         ...record.latestSummary,
         audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + record.latestSummary.audioUrl
       },
+      voiceDetails: record.voiceDetails,
     };
   }
 
@@ -360,7 +421,7 @@ Return ONLY valid JSON, no markdown, no extra text:
       ...item,
       audioUrl: "http://res.cloudinary.com/" + process.env.CLOUDINARY_CLOUD_NAME + "/video/upload/" + item.audioUrl
     }));
-  
+
     record.latestSummary = {
       ...record.latestSummary,
       vitals: record.latestSummary?.vitals ?? null,

@@ -200,6 +200,8 @@ export class ChatService {
         throw new Error('Only patient can send voice messages');
       }
 
+       let isTranscriptionExist;
+
       if (voiceId) {
 
         let isVoiceExist = await this.voiceModel.findById(voiceId);
@@ -208,7 +210,7 @@ export class ChatService {
           throw new Error('Voice not found');
         }
 
-        const isTranscriptionExist = await this.transcriptionModel.findOne({ voice: new mongoose.Types.ObjectId(voiceId) });
+          isTranscriptionExist= await this.transcriptionModel.findOne({ voice: new mongoose.Types.ObjectId(voiceId) });
 
         if (!isTranscriptionExist) {
 
@@ -224,6 +226,7 @@ export class ChatService {
           }
         }
       }
+        
       // Fetch both possible receiver connections in parallel
       const [directMatch, anyDirectConnection] = await Promise.all([
         this.socketConnectionModel.findOne({
@@ -252,6 +255,21 @@ export class ChatService {
       });
 
       message = await this.msgModel.findById(message._id).populate('voiceId');
+
+      if(isTranscriptionExist){
+
+        await this.notificationService.sendNotification({
+            userId: receiverId,
+            title: `Voice message from ${user.name}`,
+            message: user.name + ' sent you a voice message',
+            type: 'voice',
+            object: {
+              messageId: message._id?.toString(),
+              objectId: userId?.toString(),
+              subjectId: receiverId?.toString(),
+            },
+          });
+        }
 
       const localDate = moment().tz(timezone);
 
