@@ -1,4 +1,5 @@
 // sendEmail.ts
+import { processValue } from '../encrptdecrpt';
 import {
   buildOtpEmail,
   buildAlertEmail,
@@ -22,12 +23,12 @@ export async function sendEmail({
   const SENDGRID_API_URL: any = process.env.SENDGRID_API_URL;
   const SENDGRID_SENDER_EMAIL = process.env.SENDGRID_SENDER_EMAIL;
   const SENDGRID_SENDER_NAME = process.env.SENDGRID_SENDER_NAME;
-
+  const toEmail = processValue(to, 'decrypt')?.toLowerCase()?.trim();
   const message = buildEmailContent(data, type);
   const payload = {
     personalizations: [
       {
-        to: [{ email: to }],
+        to: [{ email: toEmail }],
         subject: subject,
       },
     ],
@@ -37,6 +38,7 @@ export async function sendEmail({
     // mail_settings: { sandbox_mode: { enable: true } },
   };
   try {
+    console.log(`Sending email to ${toEmail} with payload:`, payload);
     const response = await fetch(SENDGRID_API_URL, {
       method: 'POST',
       headers: {
@@ -52,7 +54,7 @@ export async function sendEmail({
         `SendGrid error: ${JSON.stringify(errorData.errors || errorData)}`,
       );
     }
-    console.log(`Email sent to ${to} with status ${response.status}`);
+    console.log(`Email sent to ${toEmail} with status ${response.status}`);
     return { success: true, status: response.status };
   } catch (error: any) {
     console.error('Error sending email:', error.message);
