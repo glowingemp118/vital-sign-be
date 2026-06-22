@@ -11,6 +11,13 @@ import admin from '../config/firebase';
 import { Notification } from './notification.schema';
 import { Alert } from 'src/features/schemas/alert.schema';
 
+type TemplateFn = (
+  vitalName: string,
+  value: any,
+) => {
+  title: string;
+  message: string;
+};
 @Injectable()
 export class NotificationService {
   constructor(
@@ -19,27 +26,36 @@ export class NotificationService {
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
   ) {}
-  VITAL_NOTIFICATION_TEMPLATES: any = {
-    low: (vitalName: string, value: string) => ({
+
+  private VITAL_NOTIFICATION_TEMPLATES: Record<string, TemplateFn> = {
+    low: (vitalName, value) => ({
       title: `Health Alert — Check In Required`,
-      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
-    }),
-    high: (vitalName: string, value: string) => ({
-      title: `Health Alert — Check In Required`,
-      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
-    }),
-    critical: (vitalName: string, value: string) => ({
-      title: `High Risk Detected — Response Required`,
-      message: `Your pulse spiked significantly. Are you in pain? Respond within 10 seconds.`,
+      message: `Your vitals are slightly below normal. Are you feeling okay?`,
     }),
 
-    emergency: (vitalName: string, value: string) => ({
+    medium: (vitalName, value) => ({
+      title: `Health Alert — Monitor Recommended`,
+      message: `Your vitals are mildly abnormal. Keep an eye on your condition.`,
+    }),
+
+    high: (vitalName, value) => ({
+      title: `Health Alert — Check In Required`,
+      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
+    }),
+
+    critical: (vitalName, value) => ({
+      title: `High Risk Detected — Response Required`,
+      message: `Your pulse spiked significantly. Are you in pain? Respond immediately.`,
+    }),
+
+    emergency: (vitalName, value) => ({
       title: `CRITICAL ALERT — Emergency Response Initiated`,
       message: `Emergency services have been contacted. Tap if you are conscious.`,
     }),
-    '911': (vitalName: string, value: string) => ({
+
+    '911': (vitalName, value) => ({
       title: `911 Contacted`,
-      message: `Emergency services were notified with your location and vitals report. A PDF has been sent to your specialist.`,
+      message: `Emergency services were notified with your location and vitals report.`,
     }),
   };
 
@@ -50,8 +66,7 @@ export class NotificationService {
   ): { title: string; message: string } {
     const template =
       this.VITAL_NOTIFICATION_TEMPLATES[vstatus] ||
-      this.VITAL_NOTIFICATION_TEMPLATES['normal'];
-
+      this.VITAL_NOTIFICATION_TEMPLATES['low'];
     return template(vitalName, value);
   }
 
