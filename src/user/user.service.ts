@@ -32,6 +32,8 @@ import { Appointment } from 'src/features/schemas/appointments.schema';
 import { ContactType } from 'src/contact-type/schemas/contac-type.schema';
 import { sendEmail } from 'src/utils/email/emailUtils';
 import { Notification } from 'src/notification/notification.schema';
+import { Record } from 'src/features/schemas/records.schema';
+import { Alert } from 'src/features/schemas/alert.schema';
 
 @Injectable()
 export class UserService {
@@ -44,6 +46,8 @@ export class UserService {
     @InjectModel(ContactType.name) private contactTypeModel: Model<ContactType>,
     @InjectModel(Notification.name)
     private notificationModel: Model<Notification>,
+    @InjectModel(Record.name) private recordModel: Model<Record>,
+    @InjectModel(Alert.name) private alertModel: Model<Alert>,
   ) {}
   generateOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString(); // Generate OTP
@@ -560,8 +564,8 @@ export class UserService {
     try {
       let user: any = await this.userModel.findById(userId).lean();
       user = processObject(user, 'decrypt');
-      const newEmail =
-        user.email.split('@')[0] + '-deleted' + '@' + user.email.split('@')[1];
+      const userEmail = processValue(user.email, 'decrypt');
+      const newEmail = `${userEmail.split('@')[0]}-deleted-${Date.now()}@${userEmail.split('@')[1]}`;
 
       if (!user) {
         throw new UnauthorizedException('User not found');
@@ -577,8 +581,13 @@ export class UserService {
           status: 'deleted',
           is_verified: false,
           previousEmail: user.email,
+          name: user.name + ' (deleted)',
           email: newEmail,
           rc_uid: [],
+          hashes: { name: '', email: '', phone: '' },
+          ...(user.provider !== 'local'
+            ? { provider: 'local', [`${user.provider}Id`]: '' }
+            : {}),
         },
         { new: true },
       );
@@ -592,6 +601,8 @@ export class UserService {
           { user: user._id },
           { status: 'deleted' },
         ),
+        this.recordModel.deleteMany({ user: user._id }),
+        this.alertModel.deleteMany({ user: user._id }),
       ]);
       return { message: 'User deleted successfully' };
     } catch (error) {

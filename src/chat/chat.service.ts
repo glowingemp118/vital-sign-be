@@ -22,12 +22,14 @@ export class ChatService {
   constructor(
     @InjectModel(Message.name) private msgModel: Model<Message>,
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(SocketConnection.name) private socketConnectionModel: Model<SocketConnection>, // Inject SocketConnection model
+    @InjectModel(SocketConnection.name)
+    private socketConnectionModel: Model<SocketConnection>, // Inject SocketConnection model
     @InjectModel(Voice.name) private voiceModel: Model<Voice>,
-    @InjectModel(Transcription.name) private transcriptionModel: Model<Transcription>,
+    @InjectModel(Transcription.name)
+    private transcriptionModel: Model<Transcription>,
     private readonly socketService: SocketService,
     private readonly notificationService: NotificationService,
-  ) { }
+  ) {}
 
   // Fetch chats (first message from each conversation with users list)
   async fetchChats(req: any): Promise<any> {
@@ -40,15 +42,13 @@ export class ChatService {
       }
       const pipeline: any[] = chatPipeline(userId, search);
 
-
-
       if (pageno && limit) {
         pipeline.push(paginationPipeline({ pageno, limit }));
       }
 
       const data: any = await this.msgModel.aggregate(pipeline);
 
-      console.log("data", data);
+      console.log('data', data);
 
       const res = finalRes({ pageno, limit, data });
       const formattedRes = {
@@ -57,7 +57,7 @@ export class ChatService {
           const ou = r.otherUser;
           const msg = r.message;
 
-          console.log("msg", msg);
+          console.log('msg', msg);
 
           return {
             ...r,
@@ -107,36 +107,41 @@ export class ChatService {
         { $match: query },
         {
           $lookup: {
-            from: "voices",
+            from: 'voices',
             // localField: "voiceId",
             // foreignField: "_id",
-            let: { voiceId: "$voiceId" },
+            let: { voiceId: '$voiceId' },
             pipeline: [
               {
                 $match: {
                   $expr: {
-                    $eq: ["$_id", "$$voiceId"]
-                  }
-                }
+                    $eq: ['$_id', '$$voiceId'],
+                  },
+                },
               },
               {
                 $addFields: {
-                  "latestSummary.audioUrl": {
-                    $concat: ["https://res.cloudinary.com/", process.env.CLOUDINARY_CLOUD_NAME, "/video/upload/", "$latestSummary.audioUrl"]
-                  }
-                }
-              }
+                  'latestSummary.audioUrl': {
+                    $concat: [
+                      'https://res.cloudinary.com/',
+                      process.env.CLOUDINARY_CLOUD_NAME,
+                      '/video/upload/',
+                      '$latestSummary.audioUrl',
+                    ],
+                  },
+                },
+              },
             ],
-            as: "voice"
-          }
+            as: 'voice',
+          },
         },
         {
-          $unwind: { path: "$voice", preserveNullAndEmptyArrays: true }
+          $unwind: { path: '$voice', preserveNullAndEmptyArrays: true },
         },
         {
           $project: {
-            voiceId: 0
-          }
+            voiceId: 0,
+          },
         },
         { $sort: { createdAt: -1 } },
         paginationPipeline({ pageno, limit }),
@@ -168,7 +173,6 @@ export class ChatService {
 
   // Send a new direct (1-to-1) message
   async sendDirectMessage(req: any, otherUserId: string) {
-
     const { _id: userId, timezone = 'UTC' } = req.user;
 
     const {
@@ -176,7 +180,7 @@ export class ChatService {
       content,
       mediaUrl,
       conversationType = 'direct',
-      voiceId
+      voiceId,
     } = req.body;
 
     const user = req.user;
@@ -190,32 +194,34 @@ export class ChatService {
     try {
       const receiverId = otherUserId;
       const receiver = await this.userModel
-        .findById(receiverId, 'name email image user_type')
+        .findOne(
+          { _id: receiverId, status: 'active' },
+          'name email image user_type',
+        )
         .lean();
       if (!receiver) {
         throw new Error('Receiver user not found');
       }
 
-      if ((user.user_type !== UserType.User) && voiceId) {
+      if (user.user_type !== UserType.User && voiceId) {
         throw new Error('Only patient can send voice messages');
       }
 
-       let isTranscriptionExist;
+      let isTranscriptionExist;
 
       if (voiceId) {
-
         let isVoiceExist = await this.voiceModel.findById(voiceId);
 
         if (!isVoiceExist) {
           throw new Error('Voice not found');
         }
 
-          isTranscriptionExist= await this.transcriptionModel.findOne({ voice: new mongoose.Types.ObjectId(voiceId) });
+        isTranscriptionExist = await this.transcriptionModel.findOne({
+          voice: new mongoose.Types.ObjectId(voiceId),
+        });
 
         if (!isTranscriptionExist) {
-
           if (receiver.user_type === UserType.Doctor) {
-
             const transcription = new this.transcriptionModel({
               doctor: new mongoose.Types.ObjectId(receiverId),
               voice: new mongoose.Types.ObjectId(voiceId),
@@ -226,7 +232,7 @@ export class ChatService {
           }
         }
       }
-        
+
       // Fetch both possible receiver connections in parallel
       const [directMatch, anyDirectConnection] = await Promise.all([
         this.socketConnectionModel.findOne({
@@ -251,30 +257,30 @@ export class ChatService {
         type: 'direct',
         readBy: directMatch ? [userId, receiverId] : [userId],
         status: isOnline ? 'DELIVERED' : 'SENT',
-        ...user.user_type === UserType.User ? { voiceId: new Types.ObjectId(voiceId) } : {}
+        ...(user.user_type === UserType.User
+          ? { voiceId: new Types.ObjectId(voiceId) }
+          : {}),
       });
 
       message = await this.msgModel.findById(message._id).populate('voiceId');
 
-      if(isTranscriptionExist){
-
+      if (isTranscriptionExist) {
         await this.notificationService.sendNotification({
-            userId: receiverId,
-            title: `Voice message from ${user.name}`,
-            message: user.name + ' sent you a voice message',
-            type: 'voice',
-            object: {
-              messageId: message._id?.toString(),
-              objectId: userId?.toString(),
-              subjectId: receiverId?.toString(),
-            },
-          });
-        }
+          userId: receiverId,
+          title: `Voice message from ${user.name}`,
+          message: user.name + ' sent you a voice message',
+          type: 'voice',
+          object: {
+            messageId: message._id?.toString(),
+            objectId: userId?.toString(),
+            subjectId: receiverId?.toString(),
+          },
+        });
+      }
 
       const localDate = moment().tz(timezone);
 
-      const cloudBase =
-        `http://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
+      const cloudBase = `http://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
 
       const messageObject = {
         ...message.toObject(),
@@ -284,12 +290,11 @@ export class ChatService {
           ...message.voiceId,
           latestSummary: message.voiceId?.latestSummary
             ? {
-              ...message.voiceId.latestSummary,
-              audioUrl: message.voiceId.latestSummary.audioUrl
-                ? cloudBase +
-                message.voiceId.latestSummary.audioUrl
-                : null,
-            }
+                ...message.voiceId.latestSummary,
+                audioUrl: message.voiceId.latestSummary.audioUrl
+                  ? cloudBase + message.voiceId.latestSummary.audioUrl
+                  : null,
+              }
             : null,
         },
 

@@ -23,6 +23,8 @@ import {
   Notification,
   NotificationSchema,
 } from 'src/notification/notification.schema';
+import { Alert, AlertSchema } from 'src/features/schemas/alert.schema';
+import { Record, RecordSchema } from 'src/features/schemas/records.schema';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -33,6 +35,8 @@ import {
       { name: Appointment.name, schema: AppointmentSchema },
       { name: ContactType.name, schema: ContactTypeSchema },
       { name: Notification.name, schema: NotificationSchema },
+      { name: Record.name, schema: RecordSchema },
+      { name: Alert.name, schema: AlertSchema },
     ]),
     JwtModule.register({
       global: true,
