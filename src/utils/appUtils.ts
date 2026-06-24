@@ -171,6 +171,7 @@ export function dedupeByVital(bodies: any[]) {
     (a, b) =>
       new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
   )) {
+    console.log('dedupeByVital', b.vital, b.recorded_at);
     if (!map.has(b.vital)) map.set(b.vital, b);
   }
   return [...map.values()];
