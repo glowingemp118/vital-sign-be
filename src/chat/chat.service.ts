@@ -48,8 +48,6 @@ export class ChatService {
 
       const data: any = await this.msgModel.aggregate(pipeline);
 
-      console.log('data', data);
-
       const res = finalRes({ pageno, limit, data });
       const formattedRes = {
         ...res,
@@ -57,14 +55,9 @@ export class ChatService {
           const ou = r.otherUser;
           const msg = r.message;
 
-          console.log('msg', msg);
-
           return {
             ...r,
-            otherUser:
-              ou?.user_type == UserType.User
-                ? processObject(ou, 'decrypt')
-                : ou,
+            otherUser: processObject(ou, 'decrypt'),
             message: {
               ...msg,
               content: processValue(msg.content, 'decrypt'),

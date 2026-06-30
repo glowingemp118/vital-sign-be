@@ -10,6 +10,9 @@ export const NOTIFICATION_TYPE = {
   APPOINTMENT_COMPLETED: 'appointment_completed',
 
   VITAL_ALERT: 'vital_alert',
+
+  CALL_MISSED: 'call_missed',
+  CALL_INCOMING: 'call_incoming',
 } as const;
 
 export const NOTIFICATION_CONFIG = {
@@ -47,5 +50,17 @@ export const NOTIFICATION_CONFIG = {
     title: 'Vital Alert',
     type: NOTIFICATION_TYPE.VITAL_ALERT,
     message: 'A vital alert requires your attention.',
+  },
+
+  [NOTIFICATION_TYPE.CALL_MISSED]: {
+    title: 'Missed Call',
+    type: NOTIFICATION_TYPE.CALL_MISSED,
+    message: 'You missed a call.',
+  },
+
+  [NOTIFICATION_TYPE.CALL_INCOMING]: {
+    title: 'Incoming Call',
+    type: NOTIFICATION_TYPE.CALL_INCOMING,
+    message: 'You have an incoming call.',
   },
 } as const;

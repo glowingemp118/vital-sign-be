@@ -42,8 +42,9 @@ export class SocketService {
     let chatRoomId: string | undefined;
 
     if (type === 'direct') {
-      // if (!objectId)
-      //   throw new Error('objectId is required for direct connection');
+      if (!objectId) {
+        throw new Error('objectId is required for direct connection');
+      }
 
       chatRoomId = (this.socketConnectionModel as any).generateChatRoomId(
         subjectId,
@@ -51,17 +52,27 @@ export class SocketService {
       );
     }
 
-    if (type === 'group' && objectId) {
+    if (type === 'group') {
+      if (!objectId) {
+        throw new Error('objectId is required for group connection');
+      }
       chatRoomId = objectId;
     }
 
-    const query: any = { subjectId, type };
-    if (objectId) query.objectId = objectId;
+    // ✅ IMPORTANT: make query truly unique
+    const query: any = {
+      subjectId,
+      type,
+      ...(chatRoomId && { chatRoomId }),
+    };
 
     const update = {
+      subjectId,
+      objectId,
       socketId,
-      lastActive: Date.now(),
-      ...(chatRoomId && { chatRoomId }),
+      lastActive: new Date(),
+      chatRoomId,
+      type,
     };
 
     return this.socketConnectionModel.findOneAndUpdate(query, update, {
