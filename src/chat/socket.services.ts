@@ -4,7 +4,7 @@ import { SocketConnection } from './schemas/socket.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Server } from 'socket.io';
-type ConnectionType = 'direct' | 'group';
+type ConnectionType = 'direct' | 'group' | 'self';
 
 interface CreateOrUpdateConnectionParams {
   subjectId: string;

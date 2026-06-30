@@ -117,7 +117,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const connectionType = type === 'group' ? 'group' : 'direct';
+    const connectionType =
+      type === 'group' ? 'group' : objectIdString ? 'direct' : 'self';
     console.log(`Connection type determined: ${connectionType}`);
     socket.join(`user_${subjectIdString}`);
     try {
