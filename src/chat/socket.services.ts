@@ -1,9 +1,10 @@
 // socket.service.ts
 import { Injectable } from '@nestjs/common';
 import { SocketConnection } from './schemas/socket.schema';
-import { InjectModel } from '@nestjs/mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Server } from 'socket.io';
+import { Connection } from 'mongoose';
 type ConnectionType = 'direct' | 'group' | 'self';
 
 interface CreateOrUpdateConnectionParams {
@@ -16,6 +17,8 @@ interface CreateOrUpdateConnectionParams {
 @Injectable()
 export class SocketService {
   constructor(
+    @InjectConnection()
+    private readonly connection: Connection,
     @InjectModel(SocketConnection.name)
     private socketConnectionModel: Model<SocketConnection>,
   ) {}
@@ -122,10 +125,15 @@ export class SocketService {
   }
 
   private async removeInactiveConnections() {
+    if (this.connection.readyState !== 1) {
+      console.warn('MongoDB not connected');
+      return;
+    }
+
     try {
       await (this.socketConnectionModel as any).removeInactiveConnections();
-    } catch (error) {
-      console.error('Error removing inactive connections:', error);
+    } catch (err) {
+      console.error(err);
     }
   }
 }

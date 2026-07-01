@@ -54,17 +54,18 @@ SocketConnectionSchema.statics.generateChatRoomId = function (
   return [subjectId.toString(), objectId?.toString() || ''].sort().join('_');
 };
 
-SocketConnectionSchema.statics.removeInactiveConnections =
-  async function (): Promise<void> {
-    const timeMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    try {
-      const result = await this.deleteMany({
-        lastActive: { $lt: timeMinutesAgo },
-      });
-      console.log(
-        `Cleaned up ${result.deletedCount} inactive socket connections`,
-      );
-    } catch (error) {
-      console.error('Error cleaning up inactive socket connections:', error);
-    }
-  };
+SocketConnectionSchema.statics.removeInactiveConnections = async function () {
+  const timeMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+  console.log('cleanup started');
+
+  try {
+    const result = await this.deleteMany({
+      lastActive: { $lt: timeMinutesAgo },
+    });
+
+    console.log('cleanup finished', result.deletedCount);
+  } catch (err) {
+    console.error('cleanup failed', err);
+  }
+};
