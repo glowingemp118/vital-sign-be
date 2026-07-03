@@ -9,8 +9,9 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UploadedFile,
-  UseInterceptors
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -23,9 +24,11 @@ import {
 } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import * as path from 'path';
+import { Response } from 'express';
 import { CreateSummaryDto } from './dto/create-summary.dto';
 import { VitalsDto } from './dto/upload-voice.dto';
-import { HealthVoiceService } from './health-voice.service';
+import { HealthStreamEvent, HealthVoiceService } from './health-voice.service';
+import { SkipInterceptor } from 'src/decorators/skip-interceptor.decorator';
 
 const audioStorage = diskStorage({
   destination: './uploads',
@@ -133,6 +136,24 @@ export class HealthVoiceController {
     return this.healthVoiceService.createSummary(dto.voiceId, dto.vitals);
   }
 
+  // ── POST /api/summary/stream ─────────────────────────────────
+  @Post('summary/stream')
+  @SkipInterceptor()
+  @ApiOperation({ summary: 'Live SSE: stream health summary + ~5s voice chunks' })
+  @ApiBody({ type: CreateSummaryDto })
+  async streamSummary(@Body() dto: CreateSummaryDto, @Res() res: Response) {
+    this.setupSse(res);
+    try {
+      await this.healthVoiceService.streamCreateSummary(dto.voiceId, dto.vitals, (event) =>
+        this.writeSse(res, event),
+      );
+    } catch (error: any) {
+      this.writeSse(res, { type: 'error', message: error?.message || 'Stream failed' });
+    } finally {
+      res.end();
+    }
+  }
+
   // ── GET /api/summary/:voiceId ────────────────────────────────
   @Get('summary/:voiceId')
   @ApiOperation({ summary: 'Get all summaries for a voice record' })
@@ -182,5 +203,73 @@ export class HealthVoiceController {
       }
     }
     return this.healthVoiceService.analyze(file, vitals);
+  }
+
+  // ── POST /api/analyze/stream ─────────────────────────────────
+  @Post('analyze/stream')
+  @SkipInterceptor()
+  @ApiOperation({ summary: 'Live SSE: transcribe + stream summary + ~5s voice chunks' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['audio'],
+      properties: {
+        audio: { type: 'string', format: 'binary', description: 'Audio file' },
+        vitals: {
+          type: 'string',
+          description: 'JSON string of vitals',
+          example: '{"bloodPressure":"145/95","heartRate":72,"spo2":98,"glucose":110}',
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('audio', {
+      storage: audioStorage,
+      fileFilter: audioFileFilter,
+      limits: { fileSize: 25 * 1024 * 1024 },
+    }),
+  )
+  async streamAnalyze(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('vitals') vitalsRaw: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (!file) throw new BadRequestException('No audio file uploaded.');
+
+    let vitals: VitalsDto | undefined;
+    if (vitalsRaw) {
+      try {
+        vitals = JSON.parse(vitalsRaw);
+      } catch {
+        throw new BadRequestException('vitals must be a valid JSON string.');
+      }
+    }
+
+    this.setupSse(res);
+    try {
+      await this.healthVoiceService.streamAnalyze(file, vitals, (event) => this.writeSse(res, event));
+    } catch (error: any) {
+      this.writeSse(res, { type: 'error', message: error?.message || 'Stream failed' });
+    } finally {
+      res.end();
+    }
+  }
+
+  private setupSse(res: Response) {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+  }
+
+  private writeSse(res: Response, event: HealthStreamEvent) {
+    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
   }
 }

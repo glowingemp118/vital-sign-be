@@ -6,6 +6,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import helmet from 'helmet';
 import { AllExceptionsFilter, ResponseInterceptor } from './utils/interceptor';
 async function bootstrap() {
@@ -19,7 +20,7 @@ async function bootstrap() {
   expressApp.get('/favicon.ico', (req, res) => res.status(204).end());
   expressApp.get('/favicon.png', (req, res) => res.status(204).end());
   app.setGlobalPrefix('api');
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  app.useGlobalInterceptors(new ResponseInterceptor(app.get(Reflector)));
   // Enable global validation pipe with additional configuration
   app.useGlobalPipes(
     new ValidationPipe({
@@ -56,7 +57,7 @@ async function bootstrap() {
 
   // Start the application on port 3000
   console.log(`Starting server on port ${process.env.PORT || 3000}...`);
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3000);
 }
 
 bootstrap();
