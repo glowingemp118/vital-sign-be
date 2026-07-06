@@ -135,15 +135,14 @@ export class NotificationService {
   }
 
   async deleteAllNotifications(userId: string) {
-    console.log('userId=======>', userId);
-
     await this.notificationModel.deleteMany({ user: userId }).exec();
     return { message: 'All notifications deleted successfully' };
   }
   async sendNotification(body: any) {
     try {
       let { userId, title, message, type, object } = body;
-      userId = userId.toString();
+      userId = userId?.toString();
+      console.log(message, 'message');
       const notification = new this.notificationModel({
         user: userId,
         title,
@@ -153,18 +152,17 @@ export class NotificationService {
       });
 
       await notification.save(); // Save the notification to the DB
+
       const userDevices = await this.deviceModel
         .findOne({
           user: new mongoose.Types.ObjectId(userId),
-          status: 'active',
         })
         .exec();
-
-      if (!userDevices) {
+      if (!userDevices?.devices || userDevices?.devices?.length === 0) {
         throw new Error('User devices not found');
       }
       // Step 2: Filter valid device tokens (device_id should not be empty)
-      const validTokens = userDevices.devices
+      const validTokens = userDevices?.devices
         .filter(
           (device) =>
             device.device_id &&
@@ -193,6 +191,11 @@ export class NotificationService {
       const response = await admin
         .messaging()
         .sendEachForMulticast(notifyPayload);
+      console.log(
+        'Firebase response:',
+        response,
+        response?.responses[0]?.error,
+      );
       return {
         message: 'Notification sent successfully',
         data: {
@@ -201,6 +204,7 @@ export class NotificationService {
         },
       };
     } catch (error) {
+      console.error('Error sending notification:', error);
       return { success: false, message: error.message || 'Unknown error' };
     }
   }

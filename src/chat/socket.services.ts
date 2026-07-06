@@ -77,7 +77,10 @@ export class SocketService {
       chatRoomId,
       type,
     };
-
+    await this.socketConnectionModel.deleteMany({
+      subjectId,
+      socketId: { $ne: socketId },
+    });
     return this.socketConnectionModel.findOneAndUpdate(query, update, {
       upsert: true,
       new: true,
@@ -98,6 +101,10 @@ export class SocketService {
     return { message: 'Connections deleted successfully' };
   }
 
+  async getUserConnections(subjectId: string) {
+    return this.socketConnectionModel.find({ subjectId });
+  }
+
   // Retrieve by chatRoomId
   async getConnectionByChatRoomId(subjectId: string, chatRoomId: string) {
     return this.socketConnectionModel.findOne({ subjectId, chatRoomId });
@@ -109,6 +116,9 @@ export class SocketService {
       objectId: groupId,
       type: 'group',
     });
+  }
+  async deleteConnectionBySocketId(socketId: string) {
+    return this.socketConnectionModel.deleteOne({ socketId });
   }
 
   private inactiveConnectionInterval: NodeJS.Timeout;

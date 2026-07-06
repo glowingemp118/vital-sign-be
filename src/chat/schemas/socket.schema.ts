@@ -57,15 +57,14 @@ SocketConnectionSchema.statics.generateChatRoomId = function (
 SocketConnectionSchema.statics.removeInactiveConnections = async function () {
   const timeMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
-  console.log('cleanup started');
+  // console.log('cleanup started');
 
   try {
     const result = await this.deleteMany({
       lastActive: { $lt: timeMinutesAgo },
     });
-
-    console.log('cleanup finished', result.deletedCount);
+    // console.log('cleanup finished', result.deletedCount);
   } catch (err) {
-    console.error('cleanup failed', err);
+    // console.error('cleanup failed', err);
   }
 };

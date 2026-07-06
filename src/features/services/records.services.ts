@@ -75,7 +75,7 @@ export class RecordService {
         status: vstatus,
       };
       await this.notificationService.sendNotification({
-        user: userId,
+        userId: userId,
         title,
         message,
         type: 'vital',

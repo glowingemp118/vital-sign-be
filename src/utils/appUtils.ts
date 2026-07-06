@@ -179,6 +179,9 @@ export function dedupeByVital(bodies: any[]) {
 
 export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   const value = processValue(String(body.value), 'encrypt');
+  if (!value || body.vstatus === 'unknown' || body.vstatus === 'not-measured') {
+    return null; // no record to create or update
+  }
   const status = body.vstatus !== 'unknown' ? body.vstatus : 'not-measured';
   const recorded_at = new Date(body.recorded_at);
 

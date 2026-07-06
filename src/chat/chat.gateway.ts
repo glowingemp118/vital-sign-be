@@ -160,35 +160,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Method for handling socket disconnection
   async handleDisconnect(socket: Socket) {
-    const { subjectId, objectId, type } = socket.handshake.query;
+    const subjectId = socket.handshake.query.subjectId as string;
 
-    const subjectIdString = Array.isArray(subjectId) ? subjectId[0] : subjectId;
-    const objectIdString = Array.isArray(objectId) ? objectId[0] : objectId;
+    // End active call if needed
+    const partnerId = this.getPartner(subjectId);
+    if (partnerId) {
+      this.clearCallPair(subjectId, partnerId);
 
-    const connectionType = type === 'group' ? 'group' : 'direct';
-    console.log(`User ${subjectIdString} disconnected.`);
-
-    // Clean up active call if user disconnects during a call
-    if (subjectIdString) {
-      const partnerId = this.getPartner(subjectIdString);
-      if (partnerId) {
-        this.clearCallPair(subjectIdString, partnerId);
-        // Notify the partner that the call has ended
-        this.server.to(this.getUserRoom(partnerId)).emit('callEnded', {
-          by: subjectIdString,
-        });
-      }
+      this.server.to(this.getUserRoom(partnerId)).emit('callEnded', {
+        by: subjectId,
+      });
     }
 
-    await this.socketService.deleteConnectionByUserId(
-      subjectIdString,
-      connectionType === 'group' ? objectIdString || null : null,
-      connectionType,
-    );
+    // Remove only this socket connection
+    await this.socketService.deleteConnectionBySocketId(socket.id);
 
-    console.log(
-      `User ${subjectIdString} removed from ${connectionType} active connections.`,
-    );
+    console.log(`Socket ${socket.id} disconnected and removed from database.`);
   }
 
   // ==========================
@@ -246,28 +233,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       offer: payload.offer,
       isVideoCall, // ADDED — lets the client show "Incoming video call…"
     });
-
-    // Send push notification to callee if they're offline
-    try {
-      await this.notificationService.sendNotification({
-        userId: calleeId,
-        title: 'Incoming Call',
-        message: `${caller?.name || 'Someone'} is calling you`,
-        type: NOTIFICATION_TYPE.CALL_MISSED,
-        object: {
-          type: 'incoming_call',
-          callerId,
-          callerName: caller?.name || 'Unknown',
-          callerAvatar: this.getFullImageUrl(caller?.image) || '',
-          offer: JSON.stringify(payload.offer),
-          // ADDED — client's FCM background handler reads data.callType /
-          // data.isVideoCall to decide whether to show a video-call push.
-          callType: isVideoCall ? 'video' : 'audio',
-          isVideoCall: isVideoCall ? '1' : '0',
-        },
-      });
-    } catch (err: any) {
-      console.error('Error sending call notification:', err?.message || err);
+    const sockets = await this.socketService.getUserConnections(calleeId);
+    if (!sockets || sockets.length === 0) {
+      console.log(
+        `[CALL NOTIFICATION] ${calleeId} is offline, sending push notification`,
+      );
+      // Send push notification to callee if they're offline
+      try {
+        await this.notificationService.sendNotification({
+          userId: calleeId,
+          title: 'Incoming Call',
+          message: `${caller?.name || 'Someone'} is calling you`,
+          type: NOTIFICATION_TYPE.CALL_MISSED,
+          object: {
+            type: 'incoming_call',
+            callerId,
+            callerName: caller?.name || 'Unknown',
+            callerAvatar: this.getFullImageUrl(caller?.image) || '',
+            // offer: JSON.stringify(payload.offer),
+            // ADDED — client's FCM background handler reads data.callType /
+            // data.isVideoCall to decide whether to show a video-call push.
+            callType: isVideoCall ? 'video' : 'audio',
+            isVideoCall: isVideoCall ? '1' : '0',
+          },
+        });
+      } catch (err: any) {
+        console.error('Error sending call notification:', err?.message || err);
+      }
     }
   }
 
