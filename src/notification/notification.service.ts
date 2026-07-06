@@ -204,8 +204,8 @@ export class NotificationService {
         },
       };
     } catch (error) {
-      console.error('Error sending notification:', error);
-      return { success: false, message: error.message || 'Unknown error' };
+      console.error('Error sending notification:', error?.message || error);
+      return { success: false, message: error?.message || 'Unknown error' };
     }
   }
 
