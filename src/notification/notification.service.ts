@@ -142,7 +142,7 @@ export class NotificationService {
     try {
       let { userId, title, message, type, object } = body;
       userId = userId?.toString();
-      console.log(message, 'message');
+
       const notification = new this.notificationModel({
         user: userId,
         title,
@@ -193,7 +193,8 @@ export class NotificationService {
         .sendEachForMulticast(notifyPayload);
       console.log(
         'Firebase response:',
-        response,
+        response?.failureCount,
+        response?.successCount,
         response?.responses[0]?.error,
       );
       return {

@@ -50,7 +50,14 @@ export class RecordService {
     'oxygenSaturation',
     'bloodGlucose',
   ];
-  activityVitals = ['steps', 'walkingRunningDistance'];
+  activityVitals = [
+    'steps',
+    'restingEnergy',
+    'activeEnergy',
+    'walkingRunningDistance',
+    'move',
+    'flightClimbed',
+  ];
 
   async createVitalNotification(
     userId: any,
@@ -79,7 +86,7 @@ export class RecordService {
         title,
         message,
         type: 'vital',
-        object: object,
+        object: JSON.stringify(object),
       });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
@@ -224,11 +231,20 @@ export class RecordService {
     const { start, end } = getTodayBoundary(timezone);
 
     // ── 1. Filter to today + dedupe ───────────────────────────────────
+    const seenVitals = new Set();
+
     const todayBodies = (
       Array.isArray(req.body) ? req.body : [req.body]
-    ).filter((b) => {
-      const t = new Date(b.recorded_at);
-      return t >= start && t < end;
+    ).filter((obj) => {
+      // Check if recorded_at is between start (inclusive) and end (exclusive)
+      // const t = new Date(obj.recorded_at);
+      // if (t < start || t >= end) return false;
+
+      // Filter unique vital values
+      if (seenVitals.has(obj.vital)) return false;
+      seenVitals.add(obj.vital);
+
+      return true;
     });
 
     if (!todayBodies.length) return this.homeRecords({ user: req.user });
@@ -242,14 +258,31 @@ export class RecordService {
         .find({ _id: { $in: vitalIds } })
         .lean()
         .exec(),
-      this.recordModel
-        .find({
-          user: uid,
-          vital: { $in: vitalIds },
-          recorded_at: { $gte: start, $lt: end },
-        })
-        .lean()
-        .exec(),
+      this.recordModel.aggregate([
+        {
+          $match: {
+            user: uid,
+            vital: { $in: vitalIds },
+            // recorded_at: { $gte: start, $lt: end },
+          },
+        },
+        {
+          $sort: {
+            recorded_at: -1,
+          },
+        },
+        {
+          $group: {
+            _id: '$vital',
+            record: { $first: '$$ROOT' },
+          },
+        },
+        {
+          $replaceRoot: {
+            newRoot: '$record',
+          },
+        },
+      ]),
     ]);
 
     const vitalMap = new Map(vitalDocs.map((v) => [String(v._id), v]));

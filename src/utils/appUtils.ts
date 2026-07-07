@@ -114,7 +114,7 @@ export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
       return 'normal';
 
     default:
-      return 'unknown';
+      return 'normal';
   }
 }
 const STATUS_COPY: Record<
@@ -184,8 +184,11 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   }
   const status = body.vstatus !== 'unknown' ? body.vstatus : 'not-measured';
   const recorded_at = new Date(body.recorded_at);
-
-  if (existing) {
+  if (
+    existing &&
+    existing.recorded_at &&
+    existing.recorded_at.getTime() === recorded_at.getTime()
+  ) {
     if (existing.value === value && existing.status === status) return null;
     return {
       isNew: false,
