@@ -871,7 +871,7 @@ export class RecordService {
 
       // Send email to the doctor
       await sendEmail({
-        to: 'nabeel.glowingsoft@gmail.com',
+        to: doctor.email,
         subject: `⚠️ Critical Vitals Alert — ${user.name ?? 'Your Patient'}`,
         type: 'alert',
         data: {
