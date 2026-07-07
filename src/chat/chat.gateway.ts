@@ -178,6 +178,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`Socket ${socket.id} disconnected and removed from database.`);
   }
 
+  @SubscribeMessage('joinConversation')
+  async handleJoinConversation(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const userId = socket.handshake.query.subjectId as string;
+
+    socket.join(`conversation_${payload.conversationId}`);
+
+    await this.socketService.createOrUpdateConnection({
+      subjectId: userId,
+      objectId: payload.conversationId,
+      socketId: socket.id,
+      type: 'direct',
+    });
+
+    console.log(`${userId} joined ${payload.conversationId}`);
+  }
+
+  @SubscribeMessage('leaveConversation')
+  async handleLeaveConversation(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    const userId = socket.handshake.query.subjectId as string;
+
+    socket.leave(`conversation_${payload.conversationId}`);
+
+    await this.socketService.deleteConnectionBySocketId(socket.id);
+  }
+
   // ==========================
   // CALL EVENTS
   // ==========================

@@ -5,6 +5,7 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Server } from 'socket.io';
 import { Connection } from 'mongoose';
+import { Conversation } from './schemas/conversation.schema';
 type ConnectionType = 'direct' | 'group' | 'self';
 
 interface CreateOrUpdateConnectionParams {
