@@ -176,6 +176,13 @@ export function dedupeByVital(bodies: any[]) {
   }
   return [...map.values()];
 }
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
 
 export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   const value = processValue(String(body.value), 'encrypt');
@@ -187,8 +194,8 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   if (
     existing &&
     existing.recorded_at &&
-    existing.recorded_at.getTime() === recorded_at.getTime()
-  ) {
+    isSameDay(existing.recorded_at, recorded_at)
+  )  {
     if (existing.value === value && existing.status === status) return null;
     return {
       isNew: false,

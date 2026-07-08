@@ -361,45 +361,37 @@ export class RecordService {
     timeFilter: string,
     timezone: string = 'UTC',
   ) {
-    let now = moment()
-      .tz(timezone)
-      .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // Set 'now' to the current time in the user timezone
-    let startDate = moment()
-      .tz(timezone)
-      .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // Default start date at midnight in user timezone
+    let startDate: moment.Moment;
+    let endDate: moment.Moment;
 
     if (from && to) {
-      const fromDate = moment(from)
-        .tz(timezone, true)
-        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // Start of the 'from' day
-      startDate = fromDate;
+      // Include the complete from/to dates
+      startDate = moment(from).tz(timezone, true).startOf('day');
 
-      const toDate = moment(to)
-        .tz(timezone, true)
-        .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // End of the 'to' day
-      now = toDate;
-    } else if (timeFilter === '24hrs') {
-      startDate = moment()
-        .tz(timezone)
-        .subtract(1, 'days')
-        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 }); // 24hrs filter uses the previous day at midnight
-      now = moment()
-        .tz(timezone)
-        .set({ hour: 23, minute: 59, second: 59, millisecond: 999 }); // Current time at 23:59:59.999
-    } else if (timeFilter === '7days') {
-      startDate = moment()
-        .tz(timezone)
-        .subtract(7, 'days')
-        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
-    } else if (timeFilter === '30days') {
-      startDate = moment()
-        .tz(timezone)
-        .subtract(30, 'days')
-        .set({ hour: 0, minute: 0, second: 0, millisecond: 0 });
+      endDate = moment(to).tz(timezone, true).endOf('day');
+    } else {
+      endDate = moment().tz(timezone);
+      switch (timeFilter) {
+        case '24hrs':
+          startDate = endDate.clone().subtract(26, 'hours');
+          break;
+
+        case '7days':
+          startDate = endDate.clone().subtract(7, 'days');
+          break;
+
+        case '30days':
+          startDate = endDate.clone().subtract(30, 'days');
+          break;
+
+        default:
+          startDate = endDate.clone().startOf('day');
+      }
     }
-
-    // Ensure that both startDate and now are JavaScript Date objects before returning
-    return { startDate: startDate.toDate(), now: now.toDate() };
+    return {
+      startDate: startDate.toDate(),
+      now: endDate.toDate(),
+    };
   }
   async vitalRecords(req: any): Promise<any> {
     const { query, user } = req;
@@ -455,7 +447,6 @@ export class RecordService {
       .sort({ recorded_at: sort === 'asc' ? 1 : -1 })
       .lean()
       .exec();
-
     // Decrypt values
     const result = records.map((rec: any) => {
       return {
