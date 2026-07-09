@@ -21,15 +21,18 @@ import {
 import { processValue } from '../utils/encrptdecrpt';
 
 // Interface for call event payloads
+type CallType = 'audio' | 'video';
+
 interface CallUserPayload {
   targetUserId: string;
   offer: any;
-  isVideoCall?: boolean; // ADDED
+  callType?: CallType;
 }
 
 interface AnswerCallPayload {
   targetUserId: string;
   answer: any;
+  callType?: CallType;
 }
 
 interface IceCandidatePayload {
@@ -39,21 +42,7 @@ interface IceCandidatePayload {
 
 interface CallActionPayload {
   targetUserId: string;
-}
-
-// ADDED — payloads for the switch-to-video handshake + renegotiation
-interface SwitchToVideoPayload {
-  targetUserId: string;
-}
-
-interface RenegotiateOfferPayload {
-  targetUserId: string;
-  offer: any;
-}
-
-interface RenegotiateAnswerPayload {
-  targetUserId: string;
-  answer: any;
+  callType?: CallType;
 }
 
 @WebSocketGateway({
@@ -72,7 +61,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Active call map: userId -> partnerId (bidirectional call lock)
   private activeCallMap = new Map<string, string>();
-
+  // Normalize any incoming callType to a strict 'audio' | 'video'
+  private normalizeCallType(callType?: string): CallType {
+    return callType === 'video' ? 'video' : 'audio';
+  }
   afterInit() {
     // 👇 PASS IT TO SERVICE
     this.socketService.setServer(this.server);
@@ -219,8 +211,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: CallUserPayload,
   ) {
-    let callerId = socket.handshake.query.subjectId as string;
-    let calleeId = payload.targetUserId ? String(payload.targetUserId) : null;
+    const callerId = socket.handshake.query.subjectId as string;
+    const calleeId = payload.targetUserId ? String(payload.targetUserId) : null;
 
     if (!callerId) {
       socket.emit('error', { message: 'Caller ID is required' });
@@ -232,60 +224,61 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const isVideoCall = !!payload.isVideoCall; // ADDED
+    const callType = this.normalizeCallType(payload.callType);
 
-    console.log(
-      `[CALL] ${callerId} -> ${calleeId} (video=${isVideoCall})`, // CHANGED — logs call type
-    );
+    console.log(`[CALL:${callType}] ${callerId} -> ${calleeId}`);
 
     // Check if either user is already in a call
     if (this.isUserBusy(callerId) || this.isUserBusy(calleeId)) {
       this.server.to(this.getUserRoom(callerId)).emit('callBusy', {
         targetUserId: calleeId,
         reason: 'user_in_call',
+        callType,
       });
       return;
     }
-    console.log(`[CALL INITIATED] ${callerId} -> ${calleeId}`);
+
     // Fetch caller information
     const caller = await this.userModel
       .findById(callerId)
       .select('name image')
       .lean();
 
-    caller.name = processValue(caller?.name, 'decrypt');
+    if (caller) {
+      caller.name = processValue(caller?.name, 'decrypt');
+    }
 
-    console.log(`[CALLER INFO]`, caller);
     // Send incoming call to all devices of the callee
     this.server.to(this.getUserRoom(calleeId)).emit('incomingCall', {
       callerId,
       callerName: caller?.name || 'Unknown',
       callerAvatar: this.getFullImageUrl(caller?.image) || '',
       offer: payload.offer,
-      isVideoCall, // ADDED — lets the client show "Incoming video call…"
+      callType,
     });
+
     const sockets = await this.socketService.getUserConnections(calleeId);
     if (!sockets || sockets.length === 0) {
       console.log(
         `[CALL NOTIFICATION] ${calleeId} is offline, sending push notification`,
       );
-      // Send push notification to callee if they're offline
+
       try {
         await this.notificationService.sendNotification({
           userId: calleeId,
-          title: 'Incoming Call',
+          title:
+            callType === 'video'
+              ? 'Incoming Video Call'
+              : 'Incoming Audio Call',
           message: `${caller?.name || 'Someone'} is calling you`,
           type: NOTIFICATION_TYPE.CALL_MISSED,
           object: {
             type: 'incoming_call',
+            callType,
             callerId,
             callerName: caller?.name || 'Unknown',
             callerAvatar: this.getFullImageUrl(caller?.image) || '',
             // offer: JSON.stringify(payload.offer),
-            // ADDED — client's FCM background handler reads data.callType /
-            // data.isVideoCall to decide whether to show a video-call push.
-            callType: isVideoCall ? 'video' : 'audio',
-            isVideoCall: isVideoCall ? '1' : '0',
           },
         });
       } catch (err: any) {
@@ -308,7 +301,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    console.log(`[CALL ANSWERED] ${calleeId} -> ${callerId}`);
+    const callType = this.normalizeCallType(payload.callType);
+
+    console.log(`[CALL ANSWERED:${callType}] ${calleeId} -> ${callerId}`);
 
     // Prevent duplicate answer
     if (this.getPartner(callerId) || this.getPartner(calleeId)) {
@@ -322,13 +317,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(this.getUserRoom(callerId)).emit('callAnswered', {
       answer: payload.answer,
       calleeId,
+      callType,
     });
 
     // Notify all OTHER devices of the callee to dismiss incoming call screen
-    // e.g., user is logged in on phone + tablet — tablet answered,
-    // phone must dismiss its IncomingCallScreen without emitting rejectCall
     socket.to(this.getUserRoom(calleeId)).emit('callAnsweredElsewhere', {
       callerId,
+      callType,
     });
   }
 
@@ -352,10 +347,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  // ADDED — BUSY CALL: a device that's already in a call (or has a pending
-  // call) tells the incoming caller it's busy, without ever having gone
-  // through the isUserBusy() check in handleCallUser (e.g. the callee's
-  // OTHER device is mid-call while this event was still in flight).
+  // BUSY CALL - a device already in a call tells the caller it's busy
   @SubscribeMessage('busyCall')
   handleBusyCall(
     @ConnectedSocket() socket: Socket,
@@ -369,11 +361,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    console.log(`[CALL BUSY] ${busyUserId} is busy, notifying ${callerId}`);
+    const callType = this.normalizeCallType(payload.callType);
+
+    console.log(`[CALL BUSY:${callType}] ${busyUserId} -> ${callerId}`);
 
     this.server.to(this.getUserRoom(callerId)).emit('callBusy', {
       targetUserId: busyUserId,
       reason: 'user_in_call',
+      callType,
     });
   }
 
@@ -391,9 +386,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    console.log(`[CALL REJECTED] ${rejecterId} -> ${callerId}`);
+    const callType = this.normalizeCallType(payload.callType);
 
-    // Clear any existing call pairs
+    console.log(`[CALL REJECTED:${callType}] ${rejecterId} -> ${callerId}`);
+
     const partner = this.getPartner(rejecterId);
     if (partner) {
       this.clearCallPair(rejecterId, partner);
@@ -403,14 +399,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.clearCallPair(rejecterId, callerId);
     this.clearCallPair(callerId, rejecterId);
 
-    // Notify caller that call was rejected
     this.server.to(this.getUserRoom(callerId)).emit('callRejected', {
       by: rejecterId,
+      callType,
     });
 
-    // Also dismiss IncomingCallScreen on other devices of the rejecter
+    // Dismiss IncomingCallScreen on other devices of the rejecter
     socket.to(this.getUserRoom(rejecterId)).emit('callAnsweredElsewhere', {
       callerId,
+      callType,
     });
   }
 
@@ -428,140 +425,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    console.log(`[CALL ENDED] ${userId} <-> ${otherUserId}`);
+    const callType = this.normalizeCallType(payload.callType);
+
+    console.log(`[CALL ENDED:${callType}] ${userId} <-> ${otherUserId}`);
 
     const partner = this.getPartner(userId);
 
-    // Clear call pair with actual partner
     if (partner) {
       this.clearCallPair(userId, partner);
     }
 
-    // Clear call pair with target user
     this.clearCallPair(userId, otherUserId);
     this.clearCallPair(otherUserId, userId);
 
-    // Notify the other user that call has ended
     this.server.to(this.getUserRoom(otherUserId)).emit('callEnded', {
       by: userId,
+      callType,
     });
 
-    // If there was a different partner, notify them too
     if (partner && partner !== otherUserId) {
       this.server.to(this.getUserRoom(partner)).emit('callEnded', {
         by: userId,
+        callType,
       });
     }
-  }
-
-  // ==========================
-  // SWITCH-TO-VIDEO EVENTS (ADDED)
-  // Mid-call upgrade from an audio call to video. All of these are simple
-  // relays guarded by isActivePair() so only the two people actually on
-  // the call can trigger them for each other.
-  // ==========================
-
-  @SubscribeMessage('switchToVideoRequest')
-  handleSwitchToVideoRequest(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: SwitchToVideoPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    console.log(`[SWITCH-TO-VIDEO] request ${fromUserId} -> ${targetUserId}`);
-
-    this.server
-      .to(this.getUserRoom(targetUserId))
-      .emit('switchToVideoRequest', { fromUserId });
-  }
-
-  @SubscribeMessage('switchToVideoAccepted')
-  handleSwitchToVideoAccepted(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: SwitchToVideoPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    console.log(`[SWITCH-TO-VIDEO] accepted ${fromUserId} -> ${targetUserId}`);
-
-    this.server
-      .to(this.getUserRoom(targetUserId))
-      .emit('switchToVideoAccepted', { fromUserId });
-  }
-
-  @SubscribeMessage('switchToVideoDeclined')
-  handleSwitchToVideoDeclined(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: SwitchToVideoPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    console.log(`[SWITCH-TO-VIDEO] declined ${fromUserId} -> ${targetUserId}`);
-
-    this.server
-      .to(this.getUserRoom(targetUserId))
-      .emit('switchToVideoDeclined', { fromUserId });
-  }
-
-  @SubscribeMessage('switchToVideoCancelled')
-  handleSwitchToVideoCancelled(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: SwitchToVideoPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    this.server
-      .to(this.getUserRoom(targetUserId))
-      .emit('switchToVideoCancelled', { fromUserId });
-  }
-
-  // ADDED — SDP renegotiation relay (adds the video m-line to an
-  // already-connected audio call). Same shape as iceCandidate/callUser.
-  @SubscribeMessage('renegotiateOffer')
-  handleRenegotiateOffer(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: RenegotiateOfferPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    console.log(`[RENEGOTIATE] offer ${fromUserId} -> ${targetUserId}`);
-
-    this.server.to(this.getUserRoom(targetUserId)).emit('renegotiateOffer', {
-      offer: payload.offer,
-      fromUserId,
-    });
-  }
-
-  @SubscribeMessage('renegotiateAnswer')
-  handleRenegotiateAnswer(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: RenegotiateAnswerPayload,
-  ) {
-    const fromUserId = socket.handshake.query.subjectId as string;
-    const targetUserId = String(payload.targetUserId);
-
-    if (!fromUserId || !this.isActivePair(fromUserId, targetUserId)) return;
-
-    console.log(`[RENEGOTIATE] answer ${fromUserId} -> ${targetUserId}`);
-
-    this.server.to(this.getUserRoom(targetUserId)).emit('renegotiateAnswer', {
-      answer: payload.answer,
-      fromUserId,
-    });
   }
 }
