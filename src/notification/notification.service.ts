@@ -181,7 +181,7 @@ export class NotificationService {
           title,
           body: message,
         },
-        data, // Ensure data is a flat object
+        data: { type }, // Ensure data is a flat object
         tokens: validTokens, // Send to multiple devices
       };
 
