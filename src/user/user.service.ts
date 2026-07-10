@@ -223,7 +223,7 @@ export class UserService {
         token_res,
       };
     } catch (error) {
-      throw new UnauthorizedException(error?.message);
+      throw new BadRequestException(error?.message);
     }
   }
 
