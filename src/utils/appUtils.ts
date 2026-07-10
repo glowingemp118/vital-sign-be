@@ -193,9 +193,10 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   const recorded_at = new Date(body.recorded_at);
   if (
     existing &&
-    existing.recorded_at &&
-    isSameDay(existing.recorded_at, recorded_at)
-  )  {
+    existing.recorded_at
+    // &&
+    // isSameDay(existing.recorded_at, recorded_at)
+  ) {
     if (existing.value === value && existing.status === status) return null;
     return {
       isNew: false,

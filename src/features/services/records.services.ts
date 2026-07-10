@@ -237,8 +237,8 @@ export class RecordService {
       Array.isArray(req.body) ? req.body : [req.body]
     ).filter((obj) => {
       // Check if recorded_at is between start (inclusive) and end (exclusive)
-      // const t = new Date(obj.recorded_at);
-      // if (t < start || t >= end) return false;
+      const t = new Date(obj.recorded_at);
+      if (t < start || t >= end) return false;
 
       // Filter unique vital values
       if (seenVitals.has(obj.vital)) return false;
@@ -263,7 +263,7 @@ export class RecordService {
           $match: {
             user: uid,
             vital: { $in: vitalIds },
-            // recorded_at: { $gte: start, $lt: end },
+            recorded_at: { $gte: start, $lt: end },
           },
         },
         {
