@@ -168,6 +168,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.socketService.deleteConnectionBySocketId(socket.id);
 
     console.log(`Socket ${socket.id} disconnected and removed from database.`);
+    // ✅ ADDED: chat presence cleanup — only when the user's last socket goes
+    // if (!subjectId) return;
+
+    // const isLastSocket = await this.markUserOffline(subjectId);
+    // if (isLastSocket) {
+    //   await this.emitStatusToConversationPeers({
+    //     server: this.server,
+    //     userId: subjectId,
+    //     status: 'offline',
+    //   });
+    //   await this.clearConversationPeers(subjectId);
+    // }
   }
 
   @SubscribeMessage('joinConversation')

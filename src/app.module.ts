@@ -26,7 +26,25 @@ import { ChatBotModule } from './chat-bot/chat-bot.module';
         limit: 10,
       },
     ]),
-    MongooseModule.forRoot(process.env.DATABASE_URL),
+    MongooseModule.forRootAsync({
+      useFactory: () => ({
+        uri: process.env.DATABASE_URL,
+        retryAttempts: Number.MAX_SAFE_INTEGER, // never give up
+        retryDelay: 5000, // 5s between attempts
+        serverSelectionTimeoutMS: 10000,
+        heartbeatFrequencyMS: 10000,
+        connectionFactory: (connection) => {
+          connection.on('connected', () => console.log('✅ Mongo connected'));
+          connection.on('disconnected', () =>
+            console.warn('⚠️ Mongo disconnected — retrying...'),
+          );
+          connection.on('error', (e) =>
+            console.error('❌ Mongo error:', e.message),
+          );
+          return connection;
+        },
+      }),
+    }),
     // TodoModule,
     AdminModule,
     UserModule,
@@ -35,7 +53,7 @@ import { ChatBotModule } from './chat-bot/chat-bot.module';
     NotificationModule,
     HealthVoiceModule,
     ContactTypeModule,
-    ChatBotModule
+    ChatBotModule,
   ],
   controllers: [],
   providers: [
