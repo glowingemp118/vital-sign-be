@@ -166,6 +166,14 @@ export class UserService {
         throw new UnauthorizedException('Invalid password');
       }
 
+       const device_types=['ios','android'];
+
+      if( signInDto?.device_type && device_types.includes(signInDto?.device_type)){
+         if(user.user_type===2){
+            throw new BadRequestException("Only patient can login with android or ios device");
+         }
+      }
+
       if (user.status !== 'active') {
         throw new UnauthorizedException(`Account is ${user.status}`);
       }
