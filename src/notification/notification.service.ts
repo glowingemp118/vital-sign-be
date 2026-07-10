@@ -174,17 +174,14 @@ export class NotificationService {
       if (validTokens.length === 0) {
         throw new Error('No valid devices found for user');
       }
-
+      const data = { type, ...object };
       // Step 4: Send multicast message using Firebase Admin
       const notifyPayload = {
         notification: {
           title,
           body: message,
         },
-        data: {
-          type,
-          ...object, // Include any additional data (e.g., order details, chat info)
-        },
+        data, // Ensure data is a flat object
         tokens: validTokens, // Send to multiple devices
       };
 

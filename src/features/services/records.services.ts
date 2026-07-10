@@ -86,7 +86,7 @@ export class RecordService {
         title,
         message,
         type: 'vital',
-        object: JSON.stringify(object),
+        object: object,
       });
     } catch (err) {
       // Never let a notification failure break the record-saving flow

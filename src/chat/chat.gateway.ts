@@ -360,29 +360,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // BUSY CALL - a device already in a call tells the caller it's busy
-  @SubscribeMessage('busyCall')
-  handleBusyCall(
-    @ConnectedSocket() socket: Socket,
-    @MessageBody() payload: CallActionPayload,
-  ) {
-    const busyUserId = socket.handshake.query.subjectId as string;
-    const callerId = String(payload.targetUserId);
+  // @SubscribeMessage('busyCall')
+  // handleBusyCall(
+  //   @ConnectedSocket() socket: Socket,
+  //   @MessageBody() payload: CallActionPayload,
+  // ) {
+  //   const busyUserId = socket.handshake.query.subjectId as string;
+  //   const callerId = String(payload.targetUserId);
 
-    if (!busyUserId) {
-      socket.emit('error', { message: 'User ID is required' });
-      return;
-    }
+  //   if (!busyUserId) {
+  //     socket.emit('error', { message: 'User ID is required' });
+  //     return;
+  //   }
 
-    const callType = this.normalizeCallType(payload.callType);
+  //   const callType = this.normalizeCallType(payload.callType);
 
-    console.log(`[CALL BUSY:${callType}] ${busyUserId} -> ${callerId}`);
+  //   console.log(`[CALL BUSY:${callType}] ${busyUserId} -> ${callerId}`);
 
-    this.server.to(this.getUserRoom(callerId)).emit('callBusy', {
-      targetUserId: busyUserId,
-      reason: 'user_in_call',
-      callType,
-    });
-  }
+  //   this.server.to(this.getUserRoom(callerId)).emit('callBusy', {
+  //     targetUserId: busyUserId,
+  //     reason: 'user_in_call',
+  //     callType,
+  //   });
+  // }
 
   // REJECT CALL - Reject an incoming call
   @SubscribeMessage('rejectCall')
