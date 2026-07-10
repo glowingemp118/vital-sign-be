@@ -173,6 +173,11 @@ export class UserService {
             throw new BadRequestException("Only patient can login with android or ios device");
          }
       }
+      if(signInDto?.device_type && signInDto.device_type==="web" ){
+        if(user.user_type!==2||user.user_type!==3){
+          throw new BadRequestException("Only admin or doctor can login with web device");
+        }
+      }
 
       if (user.status !== 'active') {
         throw new UnauthorizedException(`Account is ${user.status}`);
