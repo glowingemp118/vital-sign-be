@@ -226,20 +226,16 @@ export class ChatService {
         }
       }
 
-      // Fetch both possible receiver connections in parallel
-      const [directMatch, anyDirectConnection] = await Promise.all([
-        this.socketConnectionModel.findOne({
-          subjectId: receiverId,
-          objectId: userId,
-          type: 'direct',
-        }),
-        this.socketConnectionModel.findOne({
-          subjectId: receiverId,
-          type: 'direct',
-        }),
-      ]);
+      // Online if ANY socket is registered for this user (web + mobile)
+      const receiverSocketCount = await this.socketConnectionModel.countDocuments({
+        subjectId: new mongoose.Types.ObjectId(receiverId),
+      });
+      const isOnline = receiverSocketCount > 0;
 
-      const isOnline = !!(directMatch || anyDirectConnection);
+      const conversationId = (this.socketConnectionModel as any).generateChatRoomId(
+        userId,
+        receiverId,
+      );
 
       let message: any = await this.msgModel.create({
         subjectId: userId,
@@ -248,7 +244,7 @@ export class ChatService {
         content: processValue(content, 'encrypt'),
         mediaUrl,
         type: 'direct',
-        readBy: directMatch ? [userId, receiverId] : [userId],
+        readBy: isOnline ? [userId, receiverId] : [userId],
         status: isOnline ? 'DELIVERED' : 'SENT',
         ...(user.user_type === UserType.User
           ? { voiceId: new Types.ObjectId(voiceId) }
@@ -294,43 +290,48 @@ export class ChatService {
         timesince: localDate.fromNow(),
       };
       const bTasks = async () => {
-        const user = await this.userModel
+        const sender = await this.userModel
           .findById(userId, 'name email image user_type')
           .lean();
-        if (directMatch) {
-          this.socketService.emitToSocket(
-            directMatch.socketId,
-            'receivedMessage',
-            messageObject,
-          );
-        }
+
+        const receivedPayload = {
+          subjectId: userId,
+          objectId: receiverId,
+          messageType,
+          ...messageObject,
+        };
+
+        // Emit to ALL receiver devices (user room) + conversation room
+        this.socketService.emitToUser(receiverId, 'receivedMessage', receivedPayload);
+        this.socketService.emitToConversation(conversationId, 'receivedMessage', receivedPayload);
+
         if (isOnline) {
           const unReadCount = await this.msgModel.countDocuments({
             objectId: receiverId,
             subjectId: userId,
             readBy: { $ne: receiverId },
           });
-          this.socketService.emitToSocket(
-            anyDirectConnection.socketId || directMatch.socketId,
-            'chatUpdated',
-            {
-              message: messageObject,
-              unreadCount: unReadCount,
-              otherUser: {
-                ...processObject(user, 'decrypt'),
-                image: user.image ? process.env.IB_URL + user.image : null,
-                isOnline: true,
-              },
+
+          const chatUpdatedPayload = {
+            message: messageObject,
+            unreadCount: unReadCount,
+            otherUser: {
+              ...processObject(sender, 'decrypt'),
+              image: sender?.image ? process.env.IB_URL + sender.image : null,
+              isOnline: true,
             },
-          );
+          };
+
+          this.socketService.emitToUser(receiverId, 'chatUpdated', chatUpdatedPayload);
+          this.socketService.emitToConversation(conversationId, 'chatUpdated', chatUpdatedPayload);
         }
 
-        await this.socketConnectionModel.updateOne(
-          { _id: directMatch?._id || anyDirectConnection?._id },
-          { lastActive: Date.now() },
-        );
+        // Also notify sender's other devices (web + mobile sync)
+        this.socketService.emitToUser(userId, 'chatUpdated', {
+          message: messageObject,
+          unreadCount: 0,
+        });
 
-        // 🔹 Otherwise send push notification
         if (!isOnline) {
           const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
           const name = processValue(user.name, 'decrypt');

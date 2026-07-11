@@ -6,6 +6,7 @@ import { User, UserSchema } from 'src/user/schemas/user.schema';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
+import { WebrtcController } from './webrtc.controller';
 import {
   Conversation,
   ConversationSchema,
@@ -31,6 +32,6 @@ import { Transcription, TranscriptionSchema } from 'src/features/schemas/transcr
     ]),
   ],
   providers: [ChatGateway, ChatService, SocketService],
-  controllers: [ChatController],
+  controllers: [ChatController, WebrtcController],
 })
 export class ChatModule { }

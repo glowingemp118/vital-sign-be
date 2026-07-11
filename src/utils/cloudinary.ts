@@ -13,9 +13,8 @@ export class CloudinaryService {
     });
   }
 
-  async uploadFile(file: any) {
+  async uploadFile(file: Express.Multer.File | string) {
     try {
-
       // CASE 1: Local file path
       if (typeof file === 'string') {
         const result = await cloudinary.v2.uploader.upload(file, {
@@ -28,29 +27,38 @@ export class CloudinaryService {
         };
       }
 
-      if (!file || !file.buffer) {
-        throw new Error('Invalid file upload');
+      if (!file) {
+        throw new Error('No file provided');
       }
+
+      // CASE 2: Multer disk storage (path on disk)
+      if (file.path) {
+        return await this.uploadFile(file.path);
+      }
+
+      // CASE 3: Multer memory storage (buffer)
+      if (!file.buffer) {
+        throw new Error('Invalid file upload — no buffer or path');
+      }
+
       return await new Promise((resolve, reject) => {
         cloudinary.v2.uploader
           .upload_stream({ resource_type: 'auto' }, (error, result) => {
             if (error) {
-              reject(error);
+              return reject(error);
             }
             if (!result) {
-              reject(new Error('File upload failed'));
+              return reject(new Error('Cloudinary upload returned no result'));
             }
             const { format, public_id, version, secure_url } = result;
-            const resp = {
+            resolve({
               url: secure_url,
               name: `v${version}/${public_id}.${format}`,
-            };
-            resolve(resp);
+            });
           })
           .end(file.buffer);
       });
-    } catch (error) {
-      // Optionally log the error or handle it as needed
+    } catch (error: any) {
       throw new BadRequestException(error?.message || 'File upload failed');
     }
   }

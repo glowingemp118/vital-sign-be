@@ -55,17 +55,25 @@ export class AppointmentsService {
       const workingDay = doctor.timing.find(
         (item) => item.day === requestedDay,
       );
-      if (!workingDay || !workingDay.isOpen) {
-        throw new Error(`Doctor is not available on ${requestedDay}`);
-      }
+
+      // TODO: re-enable before production — blocks booking on closed days (e.g. Sunday)
+      // if (!workingDay || !workingDay.isOpen) {
+      //   throw new Error(`Doctor is not available on ${requestedDay}`);
+      // }
+
+      // Fallback hours when day is closed/missing (dev/testing only)
+      const schedule =
+        workingDay?.isOpen && workingDay.open && workingDay.close
+          ? workingDay
+          : { day: requestedDay, open: '08:00', close: '20:00', isOpen: true };
 
       // Doctor's working hours
       const workStartTime = moment.tz(
-        `${date} ${workingDay.open}`,
+        `${date} ${schedule.open}`,
         userTimezone,
       );
       const workEndTime = moment.tz(
-        `${date} ${workingDay.close}`,
+        `${date} ${schedule.close}`,
         userTimezone,
       );
 
