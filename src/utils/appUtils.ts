@@ -2,6 +2,7 @@ import { UserType } from '../user/dto/user.dto';
 import { processObject, processValue } from './encrptdecrpt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import mongoose, { ObjectId, Types } from 'mongoose';
+import moment from 'moment-timezone';
 
 export const modifiedUser = (user: any) => {
   const { password, hashes, roles, ...rest } =
@@ -156,12 +157,14 @@ export function getVitalMessage(
   };
 }
 
-export function getTodayBoundary(timezone: string) {
-  const start = new Date(
-    new Date().toLocaleDateString('en-CA', { timeZone: timezone }) +
-      'T00:00:00.000Z',
-  );
-  return { start, end: new Date(start.getTime() + 86_400_000) };
+export function getLast24HoursBoundary(timezone: string) {
+  const end = moment.tz(timezone);
+  const start = end.clone().subtract(24, 'hours');
+
+  return {
+    start: start.toDate(),
+    end: end.toDate(),
+  };
 }
 
 export function dedupeByVital(bodies: any[]) {

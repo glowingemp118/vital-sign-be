@@ -54,7 +54,7 @@ export type SocketConnectionDocument = SocketConnection & Document;
 export const SocketConnectionSchema =
   SchemaFactory.createForClass(SocketConnection);
 
-SocketConnectionSchema.index({ subjectId: 1 });
+SocketConnectionSchema.index({ subjectId: 1 }, { unique: true });
 SocketConnectionSchema.index({ socketId: 1 }, { unique: true });
 
 SocketConnectionSchema.statics.generateChatRoomId = function (

@@ -16,7 +16,7 @@ import {
   buildAlertEntry,
   buildRecordOp,
   dedupeByVital,
-  getTodayBoundary,
+  getLast24HoursBoundary,
   getVitalMessage,
   getVitalStatus,
 } from 'src/utils/appUtils';
@@ -76,7 +76,7 @@ export class RecordService {
         );
       const object = {
         // matches your Notification.object field
-        vitalId: vitalDoc._id,
+        vitalId: JSON.stringify(vitalDoc._id),
         vitalKey: vitalDoc.key,
         value,
         status: vstatus,
@@ -228,7 +228,7 @@ export class RecordService {
   async bulkCreateUpdate(req: any): Promise<any> {
     const uid: any = new Types.ObjectId(req.user._id);
     const timezone = req.user?.timezone || 'UTC';
-    const { start, end } = getTodayBoundary(timezone);
+    const { start, end } = getLast24HoursBoundary(timezone);
 
     // ── 1. Filter to today + dedupe ───────────────────────────────────
     const seenVitals = new Set();

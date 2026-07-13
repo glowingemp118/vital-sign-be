@@ -142,17 +142,6 @@ export class NotificationService {
     try {
       let { userId, title, message, type, object } = body;
       userId = userId?.toString();
-
-      const notification = new this.notificationModel({
-        user: userId,
-        title,
-        message,
-        type,
-        object: object,
-      });
-
-      await notification.save(); // Save the notification to the DB
-
       const userDevices = await this.deviceModel
         .findOne({
           user: new mongoose.Types.ObjectId(userId),
@@ -174,14 +163,47 @@ export class NotificationService {
       if (validTokens.length === 0) {
         throw new Error('No valid devices found for user');
       }
-      const data = { type, ...object };
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+      await this.notificationModel.updateOne(
+        {
+          user: userId,
+          title,
+          message,
+          type,
+          object,
+          createdAt: { $gte: fiveMinutesAgo },
+        },
+        {
+          $set: {
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            user: userId,
+            title,
+            message,
+            type,
+            object,
+          },
+        },
+        {
+          upsert: true,
+        },
+      );
+
+      const data = Object.fromEntries(
+        Object.entries({ type, ...object }).map(([key, value]) => [
+          key,
+          value == null ? '' : String(value),
+        ]),
+      );
       // Step 4: Send multicast message using Firebase Admin
       const notifyPayload = {
         notification: {
           title,
           body: message,
         },
-        data: { type }, // Ensure data is a flat object
+        data, // Ensure data is a flat object
         tokens: validTokens, // Send to multiple devices
       };
 

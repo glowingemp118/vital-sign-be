@@ -137,7 +137,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private getSubjectId(socket: Socket): string {
-    return (socket.data?.subjectId as string) || this.resolveSubjectId(socket) || '';
+    return (
+      (socket.data?.subjectId as string) || this.resolveSubjectId(socket) || ''
+    );
   }
 
   private setCallPair(a: string, b: string) {
@@ -165,18 +167,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(socket: Socket) {
     const subjectId = this.resolveSubjectId(socket);
+    const objectId = socket.handshake.query.objectId as string | undefined;
 
     if (!subjectId || !Types.ObjectId.isValid(subjectId)) {
-      const errorMessage =
-        'subjectId must be provided (query or auth) and must be a valid ObjectId.';
-      console.warn(`[Socket] connect rejected: invalid subjectId`);
-      socket.emit('error', { message: errorMessage });
+      socket.emit('error', {
+        message:
+          'subjectId must be provided (query or auth) and must be a valid ObjectId.',
+      });
       socket.disconnect(true);
       return;
     }
 
     socket.data.subjectId = subjectId;
+    socket.data.objectId = objectId;
+
     const userRoom = this.socketService.getUserRoom(subjectId);
+
     socket.join(userRoom);
     this.trackSocket(subjectId, socket.id);
 
@@ -184,20 +190,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.socketService.registerSocket({
         subjectId,
         socketId: socket.id,
-        type: 'self',
+        type: objectId && Types.ObjectId.isValid(objectId) ? 'direct' : 'self',
+        objectId:
+          objectId && Types.ObjectId.isValid(objectId) ? objectId : subjectId,
       });
 
-      const dbCount = await this.socketService.countUserSockets(subjectId);
-      const liveCount = this.getLiveSocketIds(subjectId).length;
       console.log(
-        `[Socket] connect subjectId=${subjectId} socketId=${socket.id} room=${userRoom} live=${liveCount} db=${dbCount}`,
+        `[Socket] connect subjectId=${subjectId} socketId=${socket.id} type=${
+          objectId ? 'direct' : 'self'
+        }`,
       );
     } catch (error) {
       console.error(`[Socket] register failed subjectId=${subjectId}`, error);
-      // Still connected in memory + room — calls can work
-      console.log(
-        `[Socket] connect (db register failed) subjectId=${subjectId} socketId=${socket.id} live=${this.getLiveSocketIds(subjectId).length}`,
-      );
     }
   }
 
@@ -235,11 +239,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.socketService.registerSocket({
       subjectId: userId,
       socketId: socket.id,
-      type: 'direct',
-      conversationId: payload.conversationId,
+      type: payload.conversationId !== userId ? 'direct' : 'self',
+      objectId: payload.conversationId,
     });
 
-    console.log(`[Chat] ${userId} joined conversation ${payload.conversationId}`);
+    console.log(
+      `[Chat] ${userId} joined conversation ${payload.conversationId}`,
+    );
   }
 
   @SubscribeMessage('leaveConversation')
@@ -250,7 +256,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getSubjectId(socket);
     if (!payload?.conversationId) return;
 
-    socket.leave(this.socketService.getConversationRoom(payload.conversationId));
+    socket.leave(
+      this.socketService.getConversationRoom(payload.conversationId),
+    );
     await this.socketService.touchSocket(socket.id);
 
     console.log(`[Chat] ${userId} left conversation ${payload.conversationId}`);
@@ -266,9 +274,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() payload: CallUserPayload,
   ) {
     const callerId = this.getSubjectId(socket);
-    const calleeId = payload?.targetUserId ? String(payload.targetUserId).trim() : '';
+    const calleeId = payload?.targetUserId
+      ? String(payload.targetUserId).trim()
+      : '';
 
-    console.log(`[Call] 1. callUser received — from=${callerId} to=${calleeId} callerSocket=${socket.id}`);
+    console.log(
+      `[Call] 1. callUser received — from=${callerId} to=${calleeId} callerSocket=${socket.id}`,
+    );
 
     if (!callerId) {
       socket.emit('error', { message: 'Caller ID is required' });
@@ -338,13 +350,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
 
     if (!emitted) {
-      console.log(`[Call] target offline to=${calleeId} — no live sockets, sending push`);
+      console.log(
+        `[Call] target offline to=${calleeId} — no live sockets, sending push`,
+      );
 
       try {
         await this.notificationService.sendNotification({
           userId: calleeId,
           title:
-            callType === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call',
+            callType === 'video'
+              ? 'Incoming Video Call'
+              : 'Incoming Audio Call',
           message: `${caller?.name || 'Someone'} is calling you`,
           type: NOTIFICATION_TYPE.CALL_MISSED,
           object: {
@@ -370,7 +386,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const callerId = String(payload.targetUserId);
     const callType = this.normalizeCallType(payload.callType);
 
-    console.log(`[Call] answerCall from=${calleeId} to=${callerId} callType=${callType}`);
+    console.log(
+      `[Call] answerCall from=${calleeId} to=${callerId} callType=${callType}`,
+    );
 
     if (!calleeId) {
       socket.emit('error', { message: 'Callee ID is required' });
@@ -389,10 +407,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       callType,
     });
 
-    socket.to(this.socketService.getUserRoom(calleeId)).emit('callAnsweredElsewhere', {
-      callerId,
-      callType,
-    });
+    socket
+      .to(this.socketService.getUserRoom(calleeId))
+      .emit('callAnsweredElsewhere', {
+        callerId,
+        callType,
+      });
   }
 
   @SubscribeMessage('iceCandidate')
@@ -452,10 +472,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       callType,
     });
 
-    socket.to(this.socketService.getUserRoom(rejecterId)).emit('callAnsweredElsewhere', {
-      callerId,
-      callType,
-    });
+    socket
+      .to(this.socketService.getUserRoom(rejecterId))
+      .emit('callAnsweredElsewhere', {
+        callerId,
+        callType,
+      });
   }
 
   @SubscribeMessage('endCall')

@@ -227,15 +227,22 @@ export class ChatService {
       }
 
       // Online if ANY socket is registered for this user (web + mobile)
-      const receiverSocketCount = await this.socketConnectionModel.countDocuments({
-        subjectId: new mongoose.Types.ObjectId(receiverId),
-      });
+      const receiverSocketCount: any =
+        await this.socketConnectionModel.countDocuments({
+          subjectId: new mongoose.Types.ObjectId(receiverId),
+        });
+
       const isOnline = receiverSocketCount > 0;
 
-      const conversationId = (this.socketConnectionModel as any).generateChatRoomId(
-        userId,
-        receiverId,
-      );
+      const shouldSendPush =
+        !receiverSocketCount ||
+        receiverSocketCount.type === 'self' ||
+        (receiverSocketCount.type === 'direct' &&
+          receiverSocketCount.objectId?.toString() !== userId.toString());
+
+      const conversationId = (
+        this.socketConnectionModel as any
+      ).generateChatRoomId(userId, receiverId);
 
       let message: any = await this.msgModel.create({
         subjectId: userId,
@@ -302,8 +309,16 @@ export class ChatService {
         };
 
         // Emit to ALL receiver devices (user room) + conversation room
-        this.socketService.emitToUser(receiverId, 'receivedMessage', receivedPayload);
-        this.socketService.emitToConversation(conversationId, 'receivedMessage', receivedPayload);
+        this.socketService.emitToUser(
+          receiverId,
+          'receivedMessage',
+          receivedPayload,
+        );
+        this.socketService.emitToConversation(
+          conversationId,
+          'receivedMessage',
+          receivedPayload,
+        );
 
         if (isOnline) {
           const unReadCount = await this.msgModel.countDocuments({
@@ -322,8 +337,16 @@ export class ChatService {
             },
           };
 
-          this.socketService.emitToUser(receiverId, 'chatUpdated', chatUpdatedPayload);
-          this.socketService.emitToConversation(conversationId, 'chatUpdated', chatUpdatedPayload);
+          this.socketService.emitToUser(
+            receiverId,
+            'chatUpdated',
+            chatUpdatedPayload,
+          );
+          this.socketService.emitToConversation(
+            conversationId,
+            'chatUpdated',
+            chatUpdatedPayload,
+          );
         }
 
         // Also notify sender's other devices (web + mobile sync)
@@ -332,7 +355,7 @@ export class ChatService {
           unreadCount: 0,
         });
 
-        if (!isOnline) {
+        if (shouldSendPush) {
           const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
           const name = processValue(user.name, 'decrypt');
           await this.notificationService.sendNotification({

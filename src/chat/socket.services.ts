@@ -53,7 +53,9 @@ export class SocketService {
   /** Emit to everyone in a conversation room */
   emitToConversation(conversationId: string, event: string, payload: any) {
     if (!this.server || !conversationId) return;
-    this.server.to(this.getConversationRoom(conversationId)).emit(event, payload);
+    this.server
+      .to(this.getConversationRoom(conversationId))
+      .emit(event, payload);
   }
 
   /** Count registered sockets for a user (for debug + offline detection) */
@@ -92,7 +94,7 @@ export class SocketService {
     }
 
     return this.socketConnectionModel.findOneAndUpdate(
-      { socketId },
+      { subjectId: new Types.ObjectId(subjectId) },
       {
         subjectId: new Types.ObjectId(subjectId),
         objectId: objectId ? new Types.ObjectId(objectId) : undefined,
@@ -111,7 +113,9 @@ export class SocketService {
   }
 
   /** @deprecated use registerSocket — kept for compatibility */
-  async createOrUpdateConnection(params: RegisterSocketParams & { objectId?: string }) {
+  async createOrUpdateConnection(
+    params: RegisterSocketParams & { objectId?: string },
+  ) {
     return this.registerSocket(params);
   }
 
@@ -170,7 +174,9 @@ export class SocketService {
 
   private async removeInactiveConnections() {
     if (this.connection.readyState !== 1) {
-      console.warn('[Socket] MongoDB not connected — skipping inactive cleanup');
+      console.warn(
+        '[Socket] MongoDB not connected — skipping inactive cleanup',
+      );
       return;
     }
 
