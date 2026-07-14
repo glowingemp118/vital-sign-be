@@ -364,7 +364,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       'incomingCall',
       incomingPayload,
     );
-    console.log(socketIds?.length, 'socketids');
+
     console.log(
       `[Call] 3. incomingCall emitted=${emitted ? 'yes' : 'no'} to=${calleeId} socketIds=[${socketIds.join(', ')}] callType=${callType} uuid=${session.uuid}`,
     );
