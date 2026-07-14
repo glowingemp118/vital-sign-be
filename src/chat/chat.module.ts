@@ -7,6 +7,8 @@ import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { WebrtcController } from './webrtc.controller';
+import { CallsController } from './calls.controller';
+import { CallSessionService } from './call-session.service';
 import {
   Conversation,
   ConversationSchema,
@@ -31,7 +33,7 @@ import { Transcription, TranscriptionSchema } from 'src/features/schemas/transcr
       { name: Transcription.name, schema: TranscriptionSchema }
     ]),
   ],
-  providers: [ChatGateway, ChatService, SocketService],
-  controllers: [ChatController, WebrtcController],
+  providers: [ChatGateway, ChatService, SocketService, CallSessionService],
+  controllers: [ChatController, WebrtcController, CallsController],
 })
 export class ChatModule { }

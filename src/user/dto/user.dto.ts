@@ -34,6 +34,10 @@ export class SignInDto {
 
   @IsOptional()
   @IsString()
+  voip_token?: string;
+
+  @IsOptional()
+  @IsString()
   timezone?: string;
 
   @IsOptional()
@@ -73,6 +77,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   device_type?: string;
+
+  @IsOptional()
+  @IsString()
+  voip_token?: string;
 
   @IsOptional()
   @IsString()
@@ -172,6 +180,10 @@ export class SocialAuthDto {
   @IsOptional()
   @IsString()
   device_type?: string;
+
+  @IsOptional()
+  @IsString()
+  voip_token?: string;
 
   @IsOptional()
   @IsString()

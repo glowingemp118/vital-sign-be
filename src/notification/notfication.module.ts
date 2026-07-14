@@ -4,6 +4,7 @@ import { Device, DeviceSchema } from '../user/schemas/devices.schema';
 import { NotificationController } from './notification.controller';
 import { Notification, NotificationSchema } from './notification.schema';
 import { NotificationService } from './notification.service';
+import { ApnsVoipService } from './apns-voip.service';
 import { Vital, VitalSchema } from 'src/features/schemas/vital.schema';
 import { User, UserSchema } from 'src/user/schemas/user.schema';
 import {
@@ -24,8 +25,8 @@ import { Alert, AlertSchema } from 'src/features/schemas/alert.schema';
       { name: Alert.name, schema: AlertSchema },
     ]),
   ],
-  providers: [NotificationService],
+  providers: [NotificationService, ApnsVoipService],
   controllers: [NotificationController],
-  exports: [NotificationService],
+  exports: [NotificationService, ApnsVoipService],
 })
 export class NotificationModule {}

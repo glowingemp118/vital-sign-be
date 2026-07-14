@@ -15,8 +15,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from 'src/user/schemas/user.schema';
 import { NotificationService } from 'src/notification/notification.service';
-import { NOTIFICATION_TYPE } from 'src/constants/constants';
 import { processValue } from '../utils/encrptdecrpt';
+import { CallSessionService } from './call-session.service';
 
 type CallType = 'audio' | 'video';
 
@@ -24,6 +24,8 @@ interface CallUserPayload {
   targetUserId: string;
   offer: any;
   callType?: CallType;
+  uuid?: string;
+  callUUID?: string;
 }
 
 interface AnswerCallPayload {
@@ -53,6 +55,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly socketService: SocketService,
     @InjectModel(User.name) private userModel: Model<User>,
     private readonly notificationService: NotificationService,
+    private readonly callSessionService: CallSessionService,
   ) {}
 
   @WebSocketServer() server!: Server;
@@ -331,12 +334,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       caller.name = processValue(caller?.name, 'decrypt');
     }
 
+    const callerName = caller?.name || 'Unknown';
+    const callerAvatar = this.getFullImageUrl(caller?.image) || '';
+
+    // Store offer server-side (VoIP push must not carry full SDP)
+    // Prefer mobile-provided uuid/callUUID when valid (CallKit pairing)
+    const session = this.callSessionService.create({
+      callerId,
+      calleeId,
+      callType,
+      offer: payload.offer,
+      callerName,
+      callerAvatar,
+      uuid: payload.uuid || payload.callUUID,
+    });
+
     const incomingPayload = {
       callerId,
-      callerName: caller?.name || 'Unknown',
-      callerAvatar: this.getFullImageUrl(caller?.image) || '',
+      callerName,
+      callerAvatar,
       offer: payload.offer,
       callType,
+      uuid: session.uuid,
+      callUUID: session.uuid,
     };
 
     const { emitted, socketIds } = await this.emitToUserLive(
@@ -346,34 +366,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
 
     console.log(
-      `[Call] 3. incomingCall emitted=${emitted ? 'yes' : 'no'} to=${calleeId} socketIds=[${socketIds.join(', ')}] callType=${callType}`,
+      `[Call] 3. incomingCall emitted=${emitted ? 'yes' : 'no'} to=${calleeId} socketIds=[${socketIds.join(', ')}] callType=${callType} uuid=${session.uuid}`,
     );
 
-    if (!emitted) {
+    // Always push for reliability (iOS VoIP when killed + Android FCM)
+    try {
+      const pushResult = await this.notificationService.sendIncomingCallPush({
+        userId: calleeId,
+        uuid: session.uuid,
+        callerId,
+        callerName,
+        callerAvatar,
+        callType,
+      });
       console.log(
-        `[Call] target offline to=${calleeId} — no live sockets, sending push`,
+        `[Call] 4. push voipSent=${pushResult.voipSent} fcmSent=${pushResult.fcmSent} (voipTokens=${pushResult.voipTokens} fcmTokens=${pushResult.fcmTokens})`,
       );
-
-      try {
-        await this.notificationService.sendNotification({
-          userId: calleeId,
-          title:
-            callType === 'video'
-              ? 'Incoming Video Call'
-              : 'Incoming Audio Call',
-          message: `${caller?.name || 'Someone'} is calling you`,
-          type: NOTIFICATION_TYPE.CALL_MISSED,
-          object: {
-            type: 'incoming_call',
-            callType,
-            callerId,
-            callerName: caller?.name || 'Unknown',
-            callerAvatar: this.getFullImageUrl(caller?.image) || '',
-          },
-        });
-      } catch (err: any) {
-        console.error('[Call] push notification failed:', err?.message || err);
-      }
+    } catch (err: any) {
+      console.error('[Call] push failed:', err?.message || err);
     }
   }
 
@@ -472,6 +482,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       callType,
     });
 
+    this.callSessionService.deleteByPair(rejecterId, callerId);
+
     socket
       .to(this.socketService.getUserRoom(rejecterId))
       .emit('callAnsweredElsewhere', {
@@ -502,6 +514,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       by: userId,
       callType,
     });
+
+    this.callSessionService.deleteByPair(userId, otherUserId);
 
     if (partner && partner !== otherUserId) {
       this.socketService.emitToUser(partner, 'callEnded', {

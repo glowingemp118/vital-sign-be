@@ -18,6 +18,7 @@ import {
   UpdateUserDto,
   SocialAuthDto,
 } from './dto/user.dto';
+import { DeviceTokensDto } from './dto/device-tokens.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../decorators/public.decorator';
 
@@ -110,6 +111,18 @@ export class UserController {
   async logout(@Request() req, @Body() body: { device_id: string }) {
     const id = req.user._id;
     return await this.userService.logout(id, body.device_id);
+  }
+
+  /**
+   * PUT /api/auth/device-tokens
+   * Upsert FCM device_id and/or iOS PushKit voip_token after login.
+   */
+  @ApiTags('Auth')
+  @Put('device-tokens')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  async updateDeviceTokens(@Request() req, @Body() body: DeviceTokensDto) {
+    return await this.userService.upsertDeviceTokens(req.user._id, body);
   }
 
   // Update user profile (now accessible at '/auth/update-profile/:id')

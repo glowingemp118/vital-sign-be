@@ -121,7 +121,16 @@ export class UserService {
         },
       });
       if (dto?.device_id && dto?.device_type) {
-        await this.upsertDevice(savedUser._id, dto.device_id, dto.device_type);
+        await this.upsertDeviceTokens(savedUser._id, {
+          device_id: dto.device_id,
+          device_type: dto.device_type,
+          voip_token: dto.voip_token,
+        });
+      } else if (dto?.voip_token) {
+        await this.upsertDeviceTokens(savedUser._id, {
+          device_type: dto.device_type || 'ios',
+          voip_token: dto.voip_token,
+        });
       }
       if (user_type === UserType.Doctor) {
         savedUser = savedUser.toObject();
@@ -186,12 +195,12 @@ export class UserService {
       if (!user.is_verified) {
         throw new UnauthorizedException('Email is not verified');
       }
-      if (signInDto?.device_id && signInDto?.device_type) {
-        await this.upsertDevice(
-          user._id,
-          signInDto.device_id,
-          signInDto.device_type,
-        );
+      if (signInDto?.device_id || signInDto?.voip_token) {
+        await this.upsertDeviceTokens(user._id, {
+          device_id: signInDto.device_id,
+          device_type: signInDto.device_type,
+          voip_token: signInDto.voip_token,
+        });
       }
       if (signInDto?.rc_uid) {
         user = await this.userModel.findByIdAndUpdate(
@@ -239,6 +248,7 @@ export class UserService {
         name,
         device_id,
         device_type,
+        voip_token,
         timezone,
         rc_uid,
       } = socialAuthDto;
@@ -284,8 +294,12 @@ export class UserService {
         await user.save();
       }
 
-      if (device_id && device_type) {
-        await this.upsertDevice(user._id, device_id, device_type);
+      if (device_id || voip_token) {
+        await this.upsertDeviceTokens(user._id, {
+          device_id,
+          device_type,
+          voip_token,
+        });
       }
 
       const token_res = generateToken(user);
@@ -511,40 +525,84 @@ export class UserService {
 
   // Add or update a device for a user
   async upsertDevice(user: string, device_id: string, device_type: string) {
+    return this.upsertDeviceTokens(user, { device_id, device_type });
+  }
+
+  /**
+   * Upsert FCM + optional iOS PushKit VoIP token for a user.
+   * Mobile calls PUT /auth/device-tokens and also sends voip_token on login.
+   */
+  async upsertDeviceTokens(
+    userId: string,
+    body: { device_id?: string; device_type?: string; voip_token?: string },
+  ) {
     try {
-      if (!user || !device_id || !device_type) {
+      const device_id = body.device_id?.trim() || undefined;
+      const voip_token = body.voip_token?.trim() || undefined;
+      const device_type = (body.device_type || (voip_token ? 'ios' : '')).toLowerCase();
+
+      if (!userId) {
         throw new UnauthorizedException('Invalid parameters for devices');
       }
-      if (device_id.length < 50) {
+      if (!device_id && !voip_token) {
+        return { message: 'No device tokens provided' };
+      }
+      if (device_id && device_id.length < 50 && device_type !== 'web') {
         return { message: 'Device ID is too short to be valid' };
       }
-      let devicesDoc: any = await this.deviceModel.findOne({ user });
+
+      let devicesDoc: any = await this.deviceModel.findOne({ user: userId });
       if (!devicesDoc) {
-        // Create a new Devices document if not exists
         devicesDoc = new this.deviceModel({
-          user: user,
-          devices: [{ device_id: device_id, device_type: device_type }],
+          user: userId,
+          devices: [],
         });
-      } else {
-        // Find device index
-        const idx = devicesDoc.devices.findIndex(
-          (d: any) => d.device_id === device_id,
-        );
-        if (idx !== -1) {
-          // Update deviceType if device exists
-          devicesDoc.devices[idx].device_type = device_type;
-        } else {
-          // Add new device
-          devicesDoc.devices.push({
-            device_id: device_id,
-            device_type: device_type,
-          });
+      }
+
+      let idx = -1;
+      if (device_id) {
+        idx = devicesDoc.devices.findIndex((d: any) => d.device_id === device_id);
+      }
+      if (idx === -1 && voip_token) {
+        idx = devicesDoc.devices.findIndex((d: any) => d.voip_token === voip_token);
+      }
+      // Prefer updating the newest iOS row so voip-only calls don't create orphans
+      if (idx === -1 && (device_type === 'ios' || voip_token)) {
+        for (let i = devicesDoc.devices.length - 1; i >= 0; i--) {
+          if (String(devicesDoc.devices[i].device_type || '').toLowerCase() === 'ios') {
+            idx = i;
+            break;
+          }
         }
       }
 
+      if (idx !== -1) {
+        if (device_type) devicesDoc.devices[idx].device_type = device_type;
+        if (device_id) devicesDoc.devices[idx].device_id = device_id;
+        if (voip_token) devicesDoc.devices[idx].voip_token = voip_token;
+      } else {
+        devicesDoc.devices.push({
+          device_id: device_id || undefined,
+          device_type: device_type || 'ios',
+          voip_token: voip_token || undefined,
+        });
+      }
+
       await devicesDoc.save();
-      return { devices: devicesDoc.devices };
-    } catch (error) {
+      const voipLen = voip_token?.length || 0;
+      console.log(
+        `[Device] upsert user=${userId} type=${device_type || 'n/a'} hasFcm=${!!device_id} fcmLen=${device_id?.length || 0} hasVoip=${!!voip_token} voipLen=${voipLen}`,
+      );
+      if (voip_token && voipLen > 100) {
+        console.warn(
+          `[Device] voip_token length=${voipLen} looks like an FCM token — PushKit tokens are usually ~64 hex chars. DeviceTokenNotForTopic will occur if wrong token type.`,
+        );
+      }
+      return {
+        message: 'Device tokens updated',
+        devices: devicesDoc.devices,
+      };
+    } catch (error: any) {
       throw new UnauthorizedException(error?.message);
     }
   }

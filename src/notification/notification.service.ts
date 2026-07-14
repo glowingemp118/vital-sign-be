@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
@@ -10,6 +11,7 @@ import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 import admin from '../config/firebase';
 import { Notification } from './notification.schema';
 import { Alert } from 'src/features/schemas/alert.schema';
+import { ApnsVoipService } from './apns-voip.service';
 
 type TemplateFn = (
   vitalName: string,
@@ -20,11 +22,14 @@ type TemplateFn = (
 };
 @Injectable()
 export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
+
   constructor(
     @InjectModel(Device.name) private readonly deviceModel: Model<Device>,
-    @InjectModel(Alert.name) private readonly alertModel: Model<Alert>, // Optional: if you want to check user validity
+    @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
     @InjectModel(Notification.name)
-    private readonly notificationModel: Model<Notification>, // Optional: if you want to check user validity
+    private readonly notificationModel: Model<Notification>,
+    private readonly apnsVoipService: ApnsVoipService,
   ) {}
 
   private VITAL_NOTIFICATION_TEMPLATES: Record<string, TemplateFn> = {
@@ -142,27 +147,60 @@ export class NotificationService {
     try {
       let { userId, title, message, type, object } = body;
       userId = userId?.toString();
-      const userDevices = await this.deviceModel
-        .findOne({
-          user: new mongoose.Types.ObjectId(userId),
-        })
-        .exec();
-      if (!userDevices?.devices || userDevices?.devices?.length === 0) {
-        throw new Error('User devices not found');
+
+      let userDevices = await this.deviceModel
+        .findOne({ user: new mongoose.Types.ObjectId(userId) })
+        .lean();
+
+      // Fallback if user was stored as string in older docs
+      if (!userDevices) {
+        userDevices = await this.deviceModel.findOne({ user: userId }).lean();
       }
-      // Step 2: Filter valid device tokens (device_id should not be empty)
-      const validTokens = userDevices?.devices
-        .filter(
-          (device) =>
-            device.device_id &&
-            device.device_id.trim() &&
-            device.device_id.length > 50,
-        ) // Remove empty or invalid tokens
-        .map((device) => device.device_id); // Extract valid device tokens
+
+      if (!userDevices?.devices || userDevices.devices.length === 0) {
+        this.logger.warn(
+          `[FCM] User devices not found userId=${userId} — iOS must send device_id (FCM) on login or PUT /auth/device-tokens`,
+        );
+        return {
+          success: false,
+          message: 'User devices not found',
+        };
+      }
+
+      const iosWithVoipOnly = userDevices.devices.filter(
+        (d) =>
+          String(d.device_type || '').toLowerCase() === 'ios' &&
+          d.voip_token &&
+          (!d.device_id || d.device_id.trim().length <= 50),
+      );
+
+      const validTokens = [
+        ...new Set(
+          userDevices.devices
+            .filter(
+              (device) =>
+                device.device_id &&
+                device.device_id.trim() &&
+                device.device_id.length > 50,
+            )
+            .map((device) => device.device_id!.trim()),
+        ),
+      ];
 
       if (validTokens.length === 0) {
-        throw new Error('No valid devices found for user');
+        this.logger.warn(
+          `[FCM] No FCM device_id for userId=${userId} devices=${userDevices.devices.length} voipOnlyIos=${iosWithVoipOnly.length} — VoIP token alone cannot receive vital/appointment FCM`,
+        );
+        return {
+          success: false,
+          message: 'No valid FCM device_id found for user',
+        };
       }
+
+      this.logger.log(
+        `[FCM] send userId=${userId} tokens=${validTokens.length} project=${process.env.FIREBASE_PROJECT_ID}`,
+      );
+
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
       await this.notificationModel.updateOne(
@@ -197,24 +235,47 @@ export class NotificationService {
           value == null ? '' : String(value),
         ]),
       );
-      // Step 4: Send multicast message using Firebase Admin
+
       const notifyPayload = {
         notification: {
           title,
           body: message,
         },
-        data, // Ensure data is a flat object
-        tokens: validTokens, // Send to multiple devices
+        data,
+        tokens: validTokens,
+        apns: {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+            },
+          },
+        },
       };
 
-      const response = await admin
-        .messaging()
-        .sendEachForMulticast(notifyPayload);
+      const response = await admin.messaging().sendEachForMulticast(notifyPayload);
+
+      const firstError = response?.responses?.find((r) => r.error)?.error;
+      if (firstError) {
+        const code = (firstError as any).code || '';
+        if (code === 'messaging/third-party-auth-error') {
+          this.logger.error(
+            `[FCM] third-party-auth-error — Firebase cannot auth to Apple APNs. ` +
+              `Upload an APNs Auth Key (.p8) in Firebase Console → Project settings → Cloud Messaging → Apple app (${process.env.APNS_BUNDLE_ID || 'com.mexidoc'}). ` +
+              `Backend MexidocCertificates.p12 is VoIP-only and does NOT fix FCM iOS. project=${process.env.FIREBASE_PROJECT_ID}`,
+          );
+        } else {
+          this.logger.error(`[FCM] send error code=${code} message=${firstError.message}`);
+        }
+      }
+
       console.log(
         'Firebase response:',
         response?.failureCount,
         response?.successCount,
-        response?.responses[0]?.error,
+        firstError,
       );
       return {
         message: 'Notification sent successfully',
@@ -223,10 +284,126 @@ export class NotificationService {
           failed: response.failureCount,
         },
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending notification:', error?.message || error);
       return { success: false, message: error?.message || 'Unknown error' };
     }
+  }
+
+  /**
+   * Incoming call push:
+   * - iOS: APNs VoIP (PushKit) — required when app is background/killed
+   * - Android: high-priority FCM data message (existing behavior)
+   * Omits WebRTC SDP offer from VoIP (size limits); store offer server-side.
+   */
+  async sendIncomingCallPush(params: {
+    userId: string;
+    uuid: string;
+    callerId: string;
+    callerName: string;
+    callerAvatar?: string;
+    callType: 'audio' | 'video';
+    title?: string;
+    message?: string;
+  }) {
+    const {
+      userId,
+      uuid,
+      callerId,
+      callerName,
+      callerAvatar = '',
+      callType,
+      title = callType === 'video' ? 'Incoming Video Call' : 'Incoming Audio Call',
+      message = `${callerName || 'Someone'} is calling you`,
+    } = params;
+
+    const userDevices = await this.deviceModel
+      .findOne({ user: new mongoose.Types.ObjectId(userId) })
+      .lean();
+
+    if (!userDevices?.devices?.length) {
+      this.logger.warn(`[CallPush] no devices for user=${userId}`);
+      return { voipSent: 0, fcmSent: 0 };
+    }
+
+    const voipTokens = [
+      ...new Set(
+        userDevices.devices
+          .filter(
+            (d) =>
+              String(d.device_type || '').toLowerCase() === 'ios' &&
+              d.voip_token &&
+              d.voip_token.trim().length > 10,
+          )
+          .map((d) => d.voip_token!.trim()),
+      ),
+    ];
+
+    const fcmTokens = [
+      ...new Set(
+        userDevices.devices
+          .filter(
+            (d) =>
+              d.device_id &&
+              d.device_id.trim().length > 50 &&
+              String(d.device_type || '').toLowerCase() !== 'web',
+          )
+          .map((d) => d.device_id!.trim()),
+      ),
+    ];
+
+    let voipSent = 0;
+    for (const token of voipTokens) {
+      const ok = await this.apnsVoipService.sendVoipPush(token, {
+        uuid,
+        callUUID: uuid,
+        handle: callerId,
+        callerId,
+        callerName: callerName || 'Unknown',
+        callerAvatar: callerAvatar || '',
+        callType,
+        type: 'incoming_call',
+      });
+      if (ok) voipSent += 1;
+    }
+
+    let fcmSent = 0;
+    if (fcmTokens.length > 0) {
+      try {
+        const data = {
+          type: 'incoming_call',
+          uuid: String(uuid),
+          callUUID: String(uuid),
+          handle: String(callerId),
+          callerId: String(callerId),
+          callerName: String(callerName || 'Unknown'),
+          callerAvatar: String(callerAvatar || ''),
+          callType: String(callType),
+        };
+
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: fcmTokens,
+          notification: { title, body: message },
+          data,
+          android: {
+            priority: 'high',
+            ttl: 60000,
+          },
+        });
+        fcmSent = response.successCount;
+        this.logger.log(
+          `[CallPush] FCM delivered=${response.successCount} failed=${response.failureCount}`,
+        );
+      } catch (err: any) {
+        this.logger.error(`[CallPush] FCM error: ${err?.message || err}`);
+      }
+    }
+
+    this.logger.log(
+      `[CallPush] user=${userId} voipTokens=${voipTokens.length} voipSent=${voipSent} fcmTokens=${fcmTokens.length} fcmSent=${fcmSent}`,
+    );
+
+    return { voipSent, fcmSent, voipTokens: voipTokens.length, fcmTokens: fcmTokens.length };
   }
 
   async updateUserStatus(userId: string, notificationId: string) {

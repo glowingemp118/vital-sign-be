@@ -11,17 +11,19 @@ export class Device {
   @Prop({
     type: [
       {
-        device_id: { type: String }, // e.g., 'Monday'
-        device_type: { type: String }, // e.g., '09:00'
-        _id: false, // Prevents automatic _id for subdocuments
+        device_id: { type: String }, // FCM token
+        device_type: { type: String }, // ios | android
+        voip_token: { type: String }, // iOS PushKit VoIP token (hex)
+        _id: false,
       },
     ],
     default: [],
-    _id: false, // Prevents automatic _id for array items
+    _id: false,
   })
   devices: {
-    device_id: string;
+    device_id?: string;
     device_type: string;
+    voip_token?: string;
   }[];
 }
 
