@@ -7,14 +7,18 @@ import {
 import { Public } from '../../decorators/public.decorator';
 import { CloudinaryService } from '../../utils/cloudinary';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { S3Service } from '../../utils/s3sb';
 @Controller('')
 export class FeatureController {
-  constructor(private readonly cloudinaryService: CloudinaryService) {}
+  constructor(
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly s3Service: S3Service,
+  ) {}
   //files
   @Post('/file/upload')
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    return await this.cloudinaryService.uploadFile(file);
+    return await this.s3Service.uploadFile(file);
   }
 
   //files
@@ -22,6 +26,6 @@ export class FeatureController {
   @Public()
   @UseInterceptors(FileInterceptor('file'))
   async uploadFilePublic(@UploadedFile() file: Express.Multer.File) {
-    return await this.cloudinaryService.uploadFile(file);
+    return await this.s3Service.uploadFile(file);
   }
 }

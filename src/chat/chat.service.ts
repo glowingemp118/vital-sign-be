@@ -16,6 +16,9 @@ import {
 } from 'src/constants/constants';
 import { Voice } from 'src/health-voice/schemas/voice.schema';
 import { Transcription } from 'src/features/schemas/transcription.schema';
+import { config } from 'dotenv';
+
+config();
 
 @Injectable()
 export class ChatService {
@@ -115,12 +118,7 @@ export class ChatService {
               {
                 $addFields: {
                   'latestSummary.audioUrl': {
-                    $concat: [
-                      'https://res.cloudinary.com/',
-                      process.env.CLOUDINARY_CLOUD_NAME,
-                      '/video/upload/',
-                      '$latestSummary.audioUrl',
-                    ],
+                    $concat: [process.env.IB_URL, '$latestSummary.audioUrl'],
                   },
                 },
               },
@@ -281,7 +279,7 @@ export class ChatService {
 
       const localDate = moment().tz(timezone);
 
-      const cloudBase = `http://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
+      const cloudBase = process.env.IB_URL;
 
       const messageObject = {
         ...message.toObject(),
