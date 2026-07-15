@@ -168,6 +168,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `${process.env.IB_URL || ''}${imageName}`;
   }
 
+  /** Deliver previously buffered ICE to a newly connected socket. */
+  private flushBufferedIceToSocket(
+    userId: string,
+    socket: Socket,
+    uuid?: string,
+  ): number {
+    const items = this.callSessionService.drainIceFor(userId, uuid);
+    for (const item of items) {
+      socket.emit('iceCandidate', {
+        candidate: item.candidate,
+        fromUserId: item.fromUserId,
+      });
+    }
+    return items.length;
+  }
+
+  /** true if user currently has at least one live socket in memory or room */
+  private async isUserReachable(userId: string): Promise<boolean> {
+    if (this.getLiveSocketIds(userId).length > 0) return true;
+    const roomIds = await this.getRoomSocketIds(userId);
+    return roomIds.length > 0;
+  }
+
   async handleConnection(socket: Socket) {
     const subjectId = this.resolveSubjectId(socket);
     const objectId = socket.handshake.query.objectId as string | undefined;
@@ -220,6 +243,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           uuid: pending.uuid,
           callUUID: pending.uuid,
         });
+      }
+
+      // Flush ICE that arrived while this user had no live socket
+      // (caller candidates during FCM wake, or callee candidates if caller blinked).
+      const active =
+        pending || this.callSessionService.findActiveForUser(subjectId);
+      const flushed = this.flushBufferedIceToSocket(
+        subjectId,
+        socket,
+        active?.uuid,
+      );
+      if (flushed > 0) {
+        console.log(
+          `[Call] flushed ${flushed} buffered iceCandidate(s) on connect to=${subjectId} uuid=${active?.uuid || 'n/a'}`,
+        );
       }
     } catch (error) {
       console.error(`[Socket] register failed subjectId=${subjectId}`, error);
@@ -413,7 +451,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('answerCall')
-  handleAnswerCall(
+  async handleAnswerCall(
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: AnswerCallPayload,
   ) {
@@ -448,17 +486,55 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callerId,
         callType,
       });
+
+    // After answer, deliver any ICE that was buffered while either side was offline
+    const toCaller = this.callSessionService.drainIceFor(callerId);
+    for (const item of toCaller) {
+      this.socketService.emitToUser(callerId, 'iceCandidate', {
+        candidate: item.candidate,
+        fromUserId: item.fromUserId,
+      });
+    }
+    const toCallee = this.callSessionService.drainIceFor(calleeId);
+    for (const item of toCallee) {
+      socket.emit('iceCandidate', {
+        candidate: item.candidate,
+        fromUserId: item.fromUserId,
+      });
+      this.socketService.emitToUser(calleeId, 'iceCandidate', {
+        candidate: item.candidate,
+        fromUserId: item.fromUserId,
+      });
+    }
+    if (toCaller.length || toCallee.length) {
+      console.log(
+        `[Call] flushed ice on answerCall → caller=${toCaller.length} callee=${toCallee.length}`,
+      );
+    }
   }
 
   @SubscribeMessage('iceCandidate')
-  handleIceCandidate(
+  async handleIceCandidate(
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: IceCandidatePayload,
   ) {
     const fromUserId = this.getSubjectId(socket);
-    const targetUserId = String(payload.targetUserId);
+    const targetUserId = String(payload.targetUserId || '').trim();
 
-    if (!fromUserId) return;
+    if (!fromUserId || !targetUserId || !payload.candidate) return;
+
+    const reachable = await this.isUserReachable(targetUserId);
+    if (!reachable) {
+      const result = this.callSessionService.bufferIceCandidate({
+        fromUserId,
+        toUserId: targetUserId,
+        candidate: payload.candidate,
+      });
+      console.log(
+        `[Call] iceCandidate buffered from=${fromUserId} to=${targetUserId} ok=${result.buffered} uuid=${result.uuid || 'n/a'} queued=${result.queued ?? 0}`,
+      );
+      return;
+    }
 
     this.socketService.emitToUser(targetUserId, 'iceCandidate', {
       candidate: payload.candidate,
