@@ -45,6 +45,7 @@ import {
 import { TranscriptionController } from './controllers/transcription.controller';
 import { TranscriptionService } from './services/transcription.services';
 import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
+import { S3Service } from '../utils/s3sb';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { Voice, VoiceSchema } from 'src/health-voice/schemas/voice.schema';
     DashboardService,
     HospitalService,
     TranscriptionService,
+    S3Service,
   ],
   exports: [NotificationService],
 })
