@@ -203,6 +203,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           objectId ? 'direct' : 'self'
         }`,
       );
+
+      // Mobile often reconnects AFTER FCM wake (live was 0 during callUser).
+      // Replay stored ringing offer so web→mobile does not depend on live socket alone.
+      const pending = this.callSessionService.findActiveForCallee(subjectId);
+      if (pending) {
+        console.log(
+          `[Call] replay incomingCall on connect callee=${subjectId} uuid=${pending.uuid} caller=${pending.callerId}`,
+        );
+        socket.emit('incomingCall', {
+          callerId: pending.callerId,
+          callerName: pending.callerName,
+          callerAvatar: pending.callerAvatar,
+          offer: pending.offer,
+          callType: pending.callType,
+          uuid: pending.uuid,
+          callUUID: pending.uuid,
+        });
+      }
     } catch (error) {
       console.error(`[Socket] register failed subjectId=${subjectId}`, error);
     }
