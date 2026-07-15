@@ -227,18 +227,23 @@ export class ChatService {
       }
 
       // Online if ANY socket is registered for this user (web + mobile)
-      const receiverSocketCount: any =
-        await this.socketConnectionModel.countDocuments({
+      const receiverSockets = await this.socketConnectionModel
+        .find({
           subjectId: new mongoose.Types.ObjectId(receiverId),
-        });
+        })
+        .lean();
 
-      const isOnline = receiverSocketCount > 0;
+      const isOnline = receiverSockets.length > 0;
 
-      const shouldSendPush =
-        !receiverSocketCount ||
-        receiverSocketCount.type === 'self' ||
-        (receiverSocketCount.type === 'direct' &&
-          receiverSocketCount.objectId?.toString() !== userId.toString());
+      // Push unless the receiver is actively viewing THIS chat.
+      // Note: countDocuments returns a number — never use it as a socket doc
+      // (that skipped every push while any socket was connected).
+      const isViewingThisChat = receiverSockets.some(
+        (s: any) =>
+          s.type === 'direct' &&
+          s.objectId?.toString() === userId.toString(),
+      );
+      const shouldSendPush = !isViewingThisChat;
 
       const conversationId = (
         this.socketConnectionModel as any
@@ -358,6 +363,9 @@ export class ChatService {
         if (shouldSendPush) {
           const msg = NOTIFICATION_CONFIG[NOTIFICATION_TYPE.MESSAGE_NEW];
           const name = processValue(user.name, 'decrypt');
+          console.log(
+            `[Chat] push message → receiver=${receiverId} online=${isOnline} sockets=${receiverSockets.length}`,
+          );
           await this.notificationService.sendNotification({
             userId: receiverId,
             title: `${name} messaged you`,
@@ -369,6 +377,10 @@ export class ChatService {
               subjectId: receiverId?.toString(),
             },
           });
+        } else {
+          console.log(
+            `[Chat] skip push receiver=${receiverId} (viewing this chat)`,
+          );
         }
       };
       // 🔹 If receiver is online → emit via socket

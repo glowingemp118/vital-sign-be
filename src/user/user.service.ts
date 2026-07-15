@@ -551,10 +551,18 @@ export class UserService {
         return { message: 'Device ID is too short to be valid' };
       }
 
-      let devicesDoc: any = await this.deviceModel.findOne({ user: userId });
+      const userOid = new mongoose.Types.ObjectId(userId);
+      let devicesDoc: any = await this.deviceModel.findOne({ user: userOid });
+      // Legacy docs stored user as plain string — find and normalize
+      if (!devicesDoc) {
+        devicesDoc = await this.deviceModel.findOne({ user: userId });
+        if (devicesDoc) {
+          devicesDoc.user = userOid;
+        }
+      }
       if (!devicesDoc) {
         devicesDoc = new this.deviceModel({
-          user: userId,
+          user: userOid,
           devices: [],
         });
       }
@@ -586,6 +594,16 @@ export class UserService {
           device_type: device_type || 'ios',
           voip_token: voip_token || undefined,
         });
+      }
+
+      // Android FCM rotates often; drop other android device_id rows so call
+      // push doesn't hit a dead token and report fcmSent=1 for the wrong device.
+      if (device_id && device_type === 'android') {
+        devicesDoc.devices = devicesDoc.devices.filter(
+          (d: any) =>
+            String(d.device_type || '').toLowerCase() !== 'android' ||
+            d.device_id === device_id,
+        );
       }
 
       await devicesDoc.save();

@@ -262,7 +262,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     socket.leave(
       this.socketService.getConversationRoom(payload.conversationId),
     );
-    await this.socketService.touchSocket(socket.id);
+
+    // Reset presence so message push is not stuck on "viewing this chat"
+    await this.socketService.registerSocket({
+      subjectId: userId,
+      socketId: socket.id,
+      type: 'self',
+      objectId: userId,
+    });
 
     console.log(`[Chat] ${userId} left conversation ${payload.conversationId}`);
   }

@@ -32,6 +32,20 @@ export class NotificationService {
     private readonly apnsVoipService: ApnsVoipService,
   ) {}
 
+  /** Devices docs may have user as ObjectId or legacy string — try both. */
+  private async findUserDevices(userId: string) {
+    const id = userId?.toString();
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+
+    let doc = await this.deviceModel
+      .findOne({ user: new mongoose.Types.ObjectId(id) })
+      .lean();
+    if (!doc) {
+      doc = await this.deviceModel.findOne({ user: id }).lean();
+    }
+    return doc;
+  }
+
   private VITAL_NOTIFICATION_TEMPLATES: Record<string, TemplateFn> = {
     low: (vitalName, value) => ({
       title: `Health Alert — Check In Required`,
@@ -148,14 +162,7 @@ export class NotificationService {
       let { userId, title, message, type, object } = body;
       userId = userId?.toString();
 
-      let userDevices = await this.deviceModel
-        .findOne({ user: new mongoose.Types.ObjectId(userId) })
-        .lean();
-
-      // Fallback if user was stored as string in older docs
-      if (!userDevices) {
-        userDevices = await this.deviceModel.findOne({ user: userId }).lean();
-      }
+      const userDevices = await this.findUserDevices(userId);
 
       if (!userDevices?.devices || userDevices.devices.length === 0) {
         this.logger.warn(
@@ -257,25 +264,52 @@ export class NotificationService {
 
       const response = await admin.messaging().sendEachForMulticast(notifyPayload);
 
-      const firstError = response?.responses?.find((r) => r.error)?.error;
-      if (firstError) {
-        const code = (firstError as any).code || '';
-        if (code === 'messaging/third-party-auth-error') {
+      const staleTokens: string[] = [];
+      response.responses.forEach((r, i) => {
+        if (r.error) {
+          const code = (r.error as any).code || '';
           this.logger.error(
-            `[FCM] third-party-auth-error — Firebase cannot auth to Apple APNs. ` +
-              `Upload an APNs Auth Key (.p8) in Firebase Console → Project settings → Cloud Messaging → Apple app (${process.env.APNS_BUNDLE_ID || 'com.mexidoc'}). ` +
-              `Backend MexidocCertificates.p12 is VoIP-only and does NOT fix FCM iOS. project=${process.env.FIREBASE_PROJECT_ID}`,
+            `[FCM] fail token=...${validTokens[i].slice(-8)} code=${code} msg=${r.error.message}`,
           );
+          if (
+            code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-registration-token'
+          ) {
+            staleTokens.push(validTokens[i]);
+          }
+          if (code === 'messaging/third-party-auth-error') {
+            this.logger.error(
+              `[FCM] third-party-auth-error — Firebase cannot auth to Apple APNs. ` +
+                `Upload an APNs Auth Key (.p8) in Firebase Console → Project settings → Cloud Messaging → Apple app (${process.env.APNS_BUNDLE_ID || 'com.mexidoc'}). ` +
+                `Backend MexidocCertificates.p12 is VoIP-only and does NOT fix FCM iOS. project=${process.env.FIREBASE_PROJECT_ID}`,
+            );
+          }
         } else {
-          this.logger.error(`[FCM] send error code=${code} message=${firstError.message}`);
+          this.logger.log(
+            `[FCM] ok token=...${validTokens[i].slice(-8)} messageId=${r.messageId || 'n/a'}`,
+          );
         }
+      });
+
+      if (staleTokens.length > 0) {
+        await this.deviceModel.updateMany(
+          {
+            $or: [
+              { user: new mongoose.Types.ObjectId(userId) },
+              { user: userId },
+            ],
+          },
+          { $pull: { devices: { device_id: { $in: staleTokens } } } },
+        );
+        this.logger.warn(
+          `[FCM] removed ${staleTokens.length} stale token(s) for user=${userId}`,
+        );
       }
 
       console.log(
         'Firebase response:',
         response?.failureCount,
         response?.successCount,
-        firstError,
       );
       return {
         message: 'Notification sent successfully',
@@ -317,9 +351,7 @@ export class NotificationService {
       message = `${callerName || 'Someone'} is calling you`,
     } = params;
 
-    const userDevices = await this.deviceModel
-      .findOne({ user: new mongoose.Types.ObjectId(userId) })
-      .lean();
+    const userDevices = await this.findUserDevices(userId);
 
     if (!userDevices?.devices?.length) {
       this.logger.warn(`[CallPush] no devices for user=${userId}`);
@@ -339,18 +371,21 @@ export class NotificationService {
       ),
     ];
 
-    const fcmTokens = [
-      ...new Set(
-        userDevices.devices
-          .filter(
-            (d) =>
-              d.device_id &&
-              d.device_id.trim().length > 50 &&
-              String(d.device_type || '').toLowerCase() !== 'web',
-          )
-          .map((d) => d.device_id!.trim()),
-      ),
-    ];
+    // Incoming-call FCM is Android-only (iOS killed→background uses VoIP PushKit).
+    // Prefer the *latest* Android FCM token — older ones often return
+    // messaging/registration-token-not-registered and can steal "fcmSent=1"
+    // while the current phone gets nothing.
+    const androidDevices = userDevices.devices.filter(
+      (d) =>
+        String(d.device_type || '').toLowerCase() === 'android' &&
+        d.device_id &&
+        d.device_id.trim().length > 50,
+    );
+    const latestAndroidToken =
+      androidDevices.length > 0
+        ? androidDevices[androidDevices.length - 1].device_id!.trim()
+        : null;
+    const androidFcmTokens = latestAndroidToken ? [latestAndroidToken] : [];
 
     let voipSent = 0;
     for (const token of voipTokens) {
@@ -368,9 +403,16 @@ export class NotificationService {
     }
 
     let fcmSent = 0;
-    if (fcmTokens.length > 0) {
+    if (androidFcmTokens.length > 0) {
       try {
-        const data = {
+        /**
+         * Android killed / background call wake-up:
+         * - High-priority DATA message (no top-level `notification`) so
+         *   FirebaseMessagingService / Notifee / CallKeep JS can run.
+         * - If `notification` is present, Android shows a tray banner and
+         *   may never open the Accept/Decline call UI when the app is killed.
+         */
+        const data: Record<string, string> = {
           type: 'incoming_call',
           uuid: String(uuid),
           callUUID: String(uuid),
@@ -379,31 +421,81 @@ export class NotificationService {
           callerName: String(callerName || 'Unknown'),
           callerAvatar: String(callerAvatar || ''),
           callType: String(callType),
+          title: String(title),
+          body: String(message),
+          channelId: 'incoming_calls',
+          priority: 'high',
+          importance: 'high',
         };
 
         const response = await admin.messaging().sendEachForMulticast({
-          tokens: fcmTokens,
-          notification: { title, body: message },
+          tokens: androidFcmTokens,
           data,
           android: {
             priority: 'high',
-            ttl: 60000,
+            ttl: 45000,
+            collapseKey: `incoming_call_${uuid}`,
           },
         });
+
         fcmSent = response.successCount;
+        const staleTokens: string[] = [];
+        response.responses.forEach((r, i) => {
+          const token = androidFcmTokens[i];
+          if (r.error) {
+            this.logger.error(
+              `[CallPush] Android FCM fail token=...${token.slice(-8)} code=${r.error.code} msg=${r.error.message}`,
+            );
+            if (
+              r.error.code === 'messaging/registration-token-not-registered' ||
+              r.error.code === 'messaging/invalid-registration-token'
+            ) {
+              staleTokens.push(token);
+            }
+          } else {
+            this.logger.log(
+              `[CallPush] Android FCM ok token=...${token.slice(-8)} messageId=${r.messageId || 'n/a'}`,
+            );
+          }
+        });
+
+        if (staleTokens.length > 0) {
+          await this.deviceModel.updateMany(
+            {
+              $or: [
+                { user: new mongoose.Types.ObjectId(userId) },
+                { user: userId },
+              ],
+            },
+            { $pull: { devices: { device_id: { $in: staleTokens } } } },
+          );
+          this.logger.warn(
+            `[CallPush] removed ${staleTokens.length} stale Android FCM token(s) for user=${userId}`,
+          );
+        }
+
         this.logger.log(
-          `[CallPush] FCM delivered=${response.successCount} failed=${response.failureCount}`,
+          `[CallPush] Android FCM data-only delivered=${response.successCount} failed=${response.failureCount} tokens=${androidFcmTokens.length}`,
         );
       } catch (err: any) {
         this.logger.error(`[CallPush] FCM error: ${err?.message || err}`);
       }
+    } else {
+      this.logger.warn(
+        `[CallPush] no Android FCM device_id for user=${userId} — login must send device_id + device_type=android`,
+      );
     }
 
     this.logger.log(
-      `[CallPush] user=${userId} voipTokens=${voipTokens.length} voipSent=${voipSent} fcmTokens=${fcmTokens.length} fcmSent=${fcmSent}`,
+      `[CallPush] user=${userId} voipTokens=${voipTokens.length} voipSent=${voipSent} androidFcm=${androidFcmTokens.length} fcmSent=${fcmSent}`,
     );
 
-    return { voipSent, fcmSent, voipTokens: voipTokens.length, fcmTokens: fcmTokens.length };
+    return {
+      voipSent,
+      fcmSent,
+      voipTokens: voipTokens.length,
+      fcmTokens: androidFcmTokens.length,
+    };
   }
 
   async updateUserStatus(userId: string, notificationId: string) {
