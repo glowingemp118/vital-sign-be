@@ -238,7 +238,8 @@ export class ChatService {
       // (that skipped every push while any socket was connected).
       const isViewingThisChat = receiverSockets.some(
         (s: any) =>
-          s.type === 'direct' && s.objectId?.toString() === userId.toString(),
+          s.type === 'direct' &&
+          s.objectId?.toString() === userId.toString(),
       );
       const shouldSendPush = !isViewingThisChat;
 

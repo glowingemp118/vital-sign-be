@@ -7,6 +7,7 @@ import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { WebrtcController } from './webrtc.controller';
+import { WebrtcService } from './webrtc.service';
 import { CallsController } from './calls.controller';
 import { CallSessionService } from './call-session.service';
 import {
@@ -33,7 +34,13 @@ import { Transcription, TranscriptionSchema } from 'src/features/schemas/transcr
       { name: Transcription.name, schema: TranscriptionSchema }
     ]),
   ],
-  providers: [ChatGateway, ChatService, SocketService, CallSessionService],
+  providers: [
+    ChatGateway,
+    ChatService,
+    SocketService,
+    CallSessionService,
+    WebrtcService,
+  ],
   controllers: [ChatController, WebrtcController, CallsController],
 })
-export class ChatModule { }
+export class ChatModule {}
