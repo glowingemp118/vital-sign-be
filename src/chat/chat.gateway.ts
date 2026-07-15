@@ -63,6 +63,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private activeCallMap = new Map<string, string>();
   /** In-memory registry — instant, no Mongo lag (source of truth for call routing) */
   private liveSocketsByUser = new Map<string, Set<string>>();
+  /** Don't kill WebRTC on brief mobile socket blips during ICE connect */
+  private disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
+  private readonly DISCONNECT_GRACE_MS = 20_000;
 
   afterInit() {
     this.socketService.setServer(this.server);
@@ -228,11 +231,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       // Mobile often reconnects AFTER FCM wake (live was 0 during callUser).
-      // Replay stored ringing offer so web→mobile does not depend on live socket alone.
+      // Replay stored ringing offer + any ICE already buffered from the caller.
       const pending = this.callSessionService.findActiveForCallee(subjectId);
       if (pending) {
+        const iceForCallee = this.callSessionService.peekIceFor(
+          subjectId,
+          pending.uuid,
+        );
         console.log(
-          `[Call] replay incomingCall on connect callee=${subjectId} uuid=${pending.uuid} caller=${pending.callerId}`,
+          `[Call] replay incomingCall on connect callee=${subjectId} uuid=${pending.uuid} caller=${pending.callerId} iceBuffered=${iceForCallee.length}`,
         );
         socket.emit('incomingCall', {
           callerId: pending.callerId,
@@ -242,23 +249,42 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           callType: pending.callType,
           uuid: pending.uuid,
           callUUID: pending.uuid,
+          // Embedded so mobile can apply AFTER setRemoteDescription(offer)
+          iceCandidates: iceForCallee.map((i) => ({
+            candidate: i.candidate,
+            fromUserId: i.fromUserId,
+          })),
         });
+
+        // Also trickle after a short delay — PC may not exist at t=0
+        const uuid = pending.uuid;
+        const sock = socket;
+        setTimeout(() => {
+          if (!sock.connected) return;
+          const flushed = this.flushBufferedIceToSocket(subjectId, sock, uuid);
+          if (flushed > 0) {
+            console.log(
+              `[Call] delayed-flushed ${flushed} iceCandidate(s) to=${subjectId} uuid=${uuid}`,
+            );
+          }
+        }, 1500);
+      } else {
+        // Caller (or in-call peer) reconnect: flush any ICE waiting for them
+        const active = this.callSessionService.findActiveForUser(subjectId);
+        const flushed = this.flushBufferedIceToSocket(
+          subjectId,
+          socket,
+          active?.uuid,
+        );
+        if (flushed > 0) {
+          console.log(
+            `[Call] flushed ${flushed} buffered iceCandidate(s) on connect to=${subjectId} uuid=${active?.uuid || 'n/a'}`,
+          );
+        }
       }
 
-      // Flush ICE that arrived while this user had no live socket
-      // (caller candidates during FCM wake, or callee candidates if caller blinked).
-      const active =
-        pending || this.callSessionService.findActiveForUser(subjectId);
-      const flushed = this.flushBufferedIceToSocket(
-        subjectId,
-        socket,
-        active?.uuid,
-      );
-      if (flushed > 0) {
-        console.log(
-          `[Call] flushed ${flushed} buffered iceCandidate(s) on connect to=${subjectId} uuid=${active?.uuid || 'n/a'}`,
-        );
-      }
+      // Cancel pending "callEnded from disconnect" if they came back in time
+      this.clearDisconnectGrace(subjectId);
     } catch (error) {
       console.error(`[Socket] register failed subjectId=${subjectId}`, error);
     }
@@ -266,12 +292,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(socket: Socket) {
     const subjectId = this.getSubjectId(socket);
-
-    const partnerId = this.getPartner(subjectId);
-    if (partnerId) {
-      this.clearCallPair(subjectId, partnerId);
-      this.socketService.emitToUser(partnerId, 'callEnded', { by: subjectId });
-    }
 
     await this.socketService.deleteConnectionBySocketId(socket.id);
     this.untrackSocket(subjectId, socket.id);
@@ -283,6 +303,41 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(
       `[Socket] disconnect subjectId=${subjectId} socketId=${socket.id} live=${remaining} db=${dbRemaining}`,
     );
+
+    // Only end the call if they stay gone — mobile often blips during FCM/ICE setup
+    const partnerId = this.getPartner(subjectId);
+    if (partnerId && remaining === 0) {
+      this.scheduleDisconnectGrace(subjectId, partnerId);
+    }
+  }
+
+  private clearDisconnectGrace(userId: string) {
+    const t = this.disconnectGraceTimers.get(userId);
+    if (t) {
+      clearTimeout(t);
+      this.disconnectGraceTimers.delete(userId);
+    }
+  }
+
+  private scheduleDisconnectGrace(userId: string, partnerId: string) {
+    this.clearDisconnectGrace(userId);
+    const timer = setTimeout(() => {
+      this.disconnectGraceTimers.delete(userId);
+      // Still offline and still paired?
+      if (this.getLiveSocketIds(userId).length > 0) return;
+      if (this.getPartner(userId) !== partnerId) return;
+
+      console.log(
+        `[Call] disconnect grace expired — ending call user=${userId} partner=${partnerId}`,
+      );
+      this.clearCallPair(userId, partnerId);
+      this.callSessionService.deleteByPair(userId, partnerId);
+      this.socketService.emitToUser(partnerId, 'callEnded', {
+        by: userId,
+        reason: 'peer_disconnected',
+      });
+    }, this.DISCONNECT_GRACE_MS);
+    this.disconnectGraceTimers.set(userId, timer);
   }
 
   @SubscribeMessage('joinConversation')
@@ -473,11 +528,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.setCallPair(callerId, calleeId);
+    this.callSessionService.markAnswered(callerId, calleeId);
+    this.clearDisconnectGrace(calleeId);
+    this.clearDisconnectGrace(callerId);
 
+    const iceForCaller = this.callSessionService.peekIceFor(callerId);
     this.socketService.emitToUser(callerId, 'callAnswered', {
       answer: payload.answer,
       calleeId,
       callType,
+      iceCandidates: iceForCaller.map((i) => ({
+        candidate: i.candidate,
+        fromUserId: i.fromUserId,
+      })),
     });
 
     socket
@@ -487,7 +550,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callType,
       });
 
-    // After answer, deliver any ICE that was buffered while either side was offline
+    // Deliver buffered ICE both ways (and keep copies peeked above for callers that apply from payload)
     const toCaller = this.callSessionService.drainIceFor(callerId);
     for (const item of toCaller) {
       this.socketService.emitToUser(callerId, 'iceCandidate', {
@@ -506,11 +569,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         fromUserId: item.fromUserId,
       });
     }
-    if (toCaller.length || toCallee.length) {
-      console.log(
-        `[Call] flushed ice on answerCall → caller=${toCaller.length} callee=${toCallee.length}`,
-      );
-    }
+    console.log(
+      `[Call] answerCall ice → callerPayload=${iceForCaller.length} flushedCaller=${toCaller.length} flushedCallee=${toCallee.length}`,
+    );
   }
 
   @SubscribeMessage('iceCandidate')
@@ -523,23 +584,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (!fromUserId || !targetUserId || !payload.candidate) return;
 
+    // Always buffer while a call session exists so reconnect/replay never loses ICE
+    const buffered = this.callSessionService.bufferIceCandidate({
+      fromUserId,
+      toUserId: targetUserId,
+      candidate: payload.candidate,
+    });
+
     const reachable = await this.isUserReachable(targetUserId);
-    if (!reachable) {
-      const result = this.callSessionService.bufferIceCandidate({
-        fromUserId,
-        toUserId: targetUserId,
+    if (reachable) {
+      this.socketService.emitToUser(targetUserId, 'iceCandidate', {
         candidate: payload.candidate,
+        fromUserId,
       });
-      console.log(
-        `[Call] iceCandidate buffered from=${fromUserId} to=${targetUserId} ok=${result.buffered} uuid=${result.uuid || 'n/a'} queued=${result.queued ?? 0}`,
-      );
-      return;
     }
 
-    this.socketService.emitToUser(targetUserId, 'iceCandidate', {
-      candidate: payload.candidate,
-      fromUserId,
-    });
+    console.log(
+      `[Call] iceCandidate from=${fromUserId} to=${targetUserId} live=${reachable} buffered=${buffered.buffered} queued=${buffered.queued ?? 0}`,
+    );
   }
 
   @SubscribeMessage('busyCall')

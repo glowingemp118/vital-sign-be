@@ -18,7 +18,8 @@ export type PendingCall = {
   callerAvatar: string;
   createdAt: number;
   expiresAt: number;
-  /** ICE from either side while the peer had no live socket */
+  answered: boolean;
+  /** ICE from either side while the peer was offline / not ready */
   pendingIce: BufferedIceCandidate[];
 };
 
@@ -27,7 +28,8 @@ export type PendingCall = {
 export class CallSessionService {
   private readonly sessions = new Map<string, PendingCall>();
   private readonly TTL_MS = 90_000;
-  private readonly MAX_ICE_PER_CALL = 80;
+  private readonly POST_ANSWER_TTL_MS = 120_000;
+  private readonly MAX_ICE_PER_CALL = 120;
 
   create(params: {
     callerId: string;
@@ -53,6 +55,7 @@ export class CallSessionService {
       ...rest,
       createdAt: now,
       expiresAt: now + this.TTL_MS,
+      answered: false,
       pendingIce: [],
     };
     this.sessions.set(uuid, session);
@@ -70,12 +73,18 @@ export class CallSessionService {
     return session;
   }
 
-  /** Return offer without deleting (caller may reconnect). */
   getOffer(uuid: string): PendingCall | null {
     return this.get(uuid);
   }
 
-  /** Latest non-expired ringing session for this callee (FCM wake → socket reconnect). */
+  markAnswered(callerId: string, calleeId: string): PendingCall | null {
+    const session = this.findActiveForPair(callerId, calleeId);
+    if (!session) return null;
+    session.answered = true;
+    session.expiresAt = Date.now() + this.POST_ANSWER_TTL_MS;
+    return session;
+  }
+
   findActiveForCallee(calleeId: string): PendingCall | null {
     this.cleanup();
     const id = String(calleeId || '').trim();
@@ -92,7 +101,6 @@ export class CallSessionService {
     return latest;
   }
 
-  /** Active session where user is caller or callee (for ICE buffer/flush). */
   findActiveForUser(userId: string): PendingCall | null {
     this.cleanup();
     const id = String(userId || '').trim();
@@ -129,10 +137,6 @@ export class CallSessionService {
     return latest;
   }
 
-  /**
-   * Queue ICE for a peer who is currently offline.
-   * Returns true if buffered onto an active call session.
-   */
   bufferIceCandidate(params: {
     fromUserId: string;
     toUserId: string;
@@ -158,8 +162,10 @@ export class CallSessionService {
       bufferedAt: Date.now(),
     });
 
-    // Keep ringing session alive while ICE is still flowing
-    session.expiresAt = Math.max(session.expiresAt, Date.now() + this.TTL_MS);
+    session.expiresAt = Math.max(
+      session.expiresAt,
+      Date.now() + (session.answered ? this.POST_ANSWER_TTL_MS : this.TTL_MS),
+    );
 
     return {
       buffered: true,
@@ -168,12 +174,18 @@ export class CallSessionService {
     };
   }
 
-  /** Drain buffered ICE meant for `toUserId`; leave the rest. */
+  /** Read ICE for user without removing (for embedding in incomingCall). */
+  peekIceFor(toUserId: string, uuid?: string): BufferedIceCandidate[] {
+    const id = String(toUserId || '').trim();
+    const session = uuid ? this.get(uuid) : this.findActiveForUser(id);
+    if (!session?.pendingIce?.length) return [];
+    return session.pendingIce.filter((item) => item.toUserId === id);
+  }
+
+  /** Drain buffered ICE meant for `toUserId`. */
   drainIceFor(toUserId: string, uuid?: string): BufferedIceCandidate[] {
     const id = String(toUserId || '').trim();
-    const session = uuid
-      ? this.get(uuid)
-      : this.findActiveForUser(id);
+    const session = uuid ? this.get(uuid) : this.findActiveForUser(id);
     if (!session?.pendingIce?.length) return [];
 
     const keep: BufferedIceCandidate[] = [];
