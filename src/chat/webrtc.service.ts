@@ -185,13 +185,11 @@ export class WebrtcService {
 
     const urls = this.buildCoturnUrls(host);
     return {
-      iceServers: [
-        {
-          urls,
-          username,
-          credential,
-        },
-      ],
+      iceServers: urls.map((u) => ({
+        urls: u,
+        username,
+        credential,
+      })),
       ttl,
     };
   }
@@ -202,13 +200,19 @@ export class WebrtcService {
     );
     if (configured.length) return configured;
 
-    // Defaults matching coturn (TLS often on 5349, override with TURN_TLS_PORT)
-    const tlsPort = this.config.get<string>('TURN_TLS_PORT')?.trim() || '5349';
-    return [
+    // Defaults: UDP+TCP 3478 only (5349/TLS often firewalled — omit unless TURN_TLS_PORT set and TURN_ENABLE_TLS=true)
+    const urls = [
       `turn:${host}:3478?transport=udp`,
       `turn:${host}:3478?transport=tcp`,
-      `turns:${host}:${tlsPort}?transport=tcp`,
     ];
+    const enableTls =
+      String(this.config.get<string>('TURN_ENABLE_TLS') || '').toLowerCase() ===
+      'true';
+    if (enableTls) {
+      const tlsPort = this.config.get<string>('TURN_TLS_PORT')?.trim() || '5349';
+      urls.push(`turns:${host}:${tlsPort}?transport=tcp`);
+    }
+    return urls;
   }
 
   /** Static long-lived TURN username/password from env. */
@@ -219,7 +223,6 @@ export class WebrtcService {
       this.config.get<string>('TURN_URLS') || this.config.get<string>('TURN_URL'),
     );
 
-    // Also allow TURN_HOST + static creds without TURN_URL
     const host =
       this.config.get<string>('TURN_HOST')?.trim() ||
       this.config.get<string>('TURN_DOMAIN')?.trim();
@@ -232,14 +235,15 @@ export class WebrtcService {
 
     if (!username || !credential || !finalUrls.length) return null;
 
+    // One RTCIceServer per URL — better Android compatibility than urls[]
+    const iceServers: IceServer[] = finalUrls.map((u) => ({
+      urls: u,
+      username,
+      credential,
+    }));
+
     return {
-      iceServers: [
-        {
-          urls: finalUrls.length === 1 ? finalUrls[0] : finalUrls,
-          username,
-          credential,
-        },
-      ],
+      iceServers,
       ttl: Number(this.config.get<string>('TURN_TTL') || 86400),
     };
   }
