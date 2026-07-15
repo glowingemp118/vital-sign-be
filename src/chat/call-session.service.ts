@@ -64,6 +64,23 @@ export class CallSessionService {
     return this.get(uuid);
   }
 
+  /** Latest non-expired ringing session for this callee (FCM wake → socket reconnect). */
+  findActiveForCallee(calleeId: string): PendingCall | null {
+    this.cleanup();
+    const id = String(calleeId || '').trim();
+    if (!id) return null;
+
+    let latest: PendingCall | null = null;
+    for (const session of this.sessions.values()) {
+      if (session.calleeId !== id) continue;
+      if (session.expiresAt < Date.now()) continue;
+      if (!latest || session.createdAt > latest.createdAt) {
+        latest = session;
+      }
+    }
+    return latest;
+  }
+
   delete(uuid: string) {
     this.sessions.delete(uuid);
   }
