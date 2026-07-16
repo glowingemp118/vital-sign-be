@@ -25,7 +25,7 @@ export type HealthStreamEvent =
   | { type: 'transcription'; text: string }
   | { type: 'transcription_ready'; transcription: string }
   | { type: 'quick_summary_start' }
-  | { type: 'summary_chunk'; text: string; delta?: string }
+  | { type: 'summary_chunk'; text: string; isCumulative: false }
   | { type: 'summary_delta'; delta: string; fullText: string }
   | { type: 'clinical_summary_delta'; delta: string; fullText: string }
   | { type: 'clinical_summary_ready'; clinicalSummary: string }
@@ -34,7 +34,7 @@ export type HealthStreamEvent =
   | { type: 'audio_start' }
   | { type: 'audio_ready'; audioUrl: string }
   | { type: 'summary_complete'; summary: Record<string, unknown> }
-  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
+  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; clinicalSummary: string; recommendations: unknown[]; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
   | { type: 'error'; message: string };
 
 type StreamEmitter = (event: HealthStreamEvent) => void | Promise<void>;
@@ -589,14 +589,14 @@ Output fields in this exact order (clinicalSummary FIRST):
     let fullText = '';
     for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 220, 0.35)) {
       fullText += delta;
-      await emit({ type: 'summary_chunk', delta, text: fullText });
+      await emit({ type: 'summary_chunk', text: delta, isCumulative: false });
       await emit({ type: 'clinical_summary_delta', delta, fullText });
     }
 
     const trimmed = fullText.trim();
     if (trimmed && this.isDismissiveClinicalText(trimmed) && ctx.symptomHints.length > 0) {
       const fallback = `The patient is presenting with ${ctx.symptomHints.join(' and ')}. Although heart rate and oxygen levels may appear within normal limits, these symptoms still require medical attention — especially chest pain and severe headache. Please seek evaluation promptly.`;
-      await emit({ type: 'summary_chunk', delta: fallback, text: fallback });
+      await emit({ type: 'summary_chunk', text: fallback, isCumulative: false });
       await emit({ type: 'clinical_summary_delta', delta: fallback, fullText: fallback });
       return fallback;
     }
@@ -622,7 +622,7 @@ Output fields in this exact order (clinicalSummary FIRST):
       if (nextClinical.length > clinicalSummary.length && !this.isDismissiveClinicalText(nextClinical)) {
         const clinicalDelta = nextClinical.slice(clinicalSummary.length);
         clinicalSummary = nextClinical;
-        await emit({ type: 'summary_chunk', delta: clinicalDelta, text: clinicalSummary });
+        await emit({ type: 'summary_chunk', text: clinicalDelta, isCumulative: false });
         await emit({ type: 'clinical_summary_delta', delta: clinicalDelta, fullText: clinicalSummary });
       }
     }
@@ -868,17 +868,26 @@ Output fields in this exact order (clinicalSummary FIRST):
     );
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
+    const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    const recommendations = Array.isArray(summary.recommendations)
+      ? summary.recommendations
+      : [];
+
     await emit({
       type: 'done',
       voiceId,
       transcription: record.transcription,
       summary,
+      clinicalSummary,
+      recommendations,
       generatedAt,
       audioPending: true,
       data: {
         voiceId,
         transcription: record.transcription,
         summary,
+        clinicalSummary,
+        recommendations,
         generatedAt,
         audioPending: true,
       },
@@ -886,10 +895,9 @@ Output fields in this exact order (clinicalSummary FIRST):
 
     let audioUrl: string | undefined;
     let cloudinaryName: string | undefined;
-    const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
     try {
       await emit({ type: 'audio_start' });
-      const audio = await this.createSummaryAudio(clinicalText);
+      const audio = await this.createSummaryAudio(clinicalSummary);
       if (audio) {
         audioUrl = audio.audioUrl;
         cloudinaryName = audio.cloudinaryName;
@@ -1022,17 +1030,26 @@ Output fields in this exact order (clinicalSummary FIRST):
 
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
+    const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    const recommendations = Array.isArray(summary.recommendations)
+      ? summary.recommendations
+      : [];
+
     await emit({
       type: 'done',
       voiceId: createVoice._id.toString(),
       transcription,
       summary,
+      clinicalSummary,
+      recommendations,
       generatedAt,
       audioPending: true,
       data: {
         voiceId: createVoice._id.toString(),
         transcription,
         summary,
+        clinicalSummary,
+        recommendations,
         generatedAt,
         audioPending: true,
       },
@@ -1040,10 +1057,9 @@ Output fields in this exact order (clinicalSummary FIRST):
 
     let audioUrl: string | undefined;
     let cloudinaryName: string | undefined;
-    const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
     try {
       await emit({ type: 'audio_start' });
-      const audio = await this.createSummaryAudio(clinicalText);
+      const audio = await this.createSummaryAudio(clinicalSummary);
       if (audio) {
         audioUrl = audio.audioUrl;
         cloudinaryName = audio.cloudinaryName;
