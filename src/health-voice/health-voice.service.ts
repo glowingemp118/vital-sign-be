@@ -19,14 +19,22 @@ import { CloudinaryService } from 'src/utils/cloudinary';
 import mongoose from 'mongoose';
 
 export type HealthStreamEvent =
+  | { type: 'started'; voiceId?: string; stage?: string }
+  | { type: 'progress'; stage: string; elapsedMs: number }
   | { type: 'transcription_start' }
   | { type: 'transcription'; text: string }
+  | { type: 'transcription_ready'; transcription: string }
   | { type: 'quick_summary_start' }
+  | { type: 'summary_chunk'; text: string; delta?: string }
   | { type: 'summary_delta'; delta: string; fullText: string }
   | { type: 'clinical_summary_delta'; delta: string; fullText: string }
+  | { type: 'clinical_summary_ready'; clinicalSummary: string }
+  | { type: 'recommendations_ready'; recommendations: unknown[] }
   | { type: 'audio_chunk'; index: number; text: string; audioBase64: string; format: 'mp3' }
+  | { type: 'audio_start' }
+  | { type: 'audio_ready'; audioUrl: string }
   | { type: 'summary_complete'; summary: Record<string, unknown> }
-  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; generatedAt: string; audioUrl?: string }
+  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
   | { type: 'error'; message: string };
 
 type StreamEmitter = (event: HealthStreamEvent) => void | Promise<void>;
@@ -545,15 +553,10 @@ Output fields in this exact order (clinicalSummary FIRST):
     transcription: string,
     vitals: VitalsDto | undefined,
     emit: StreamEmitter,
-  ): Promise<{ summary: Record<string, unknown>; audioBuffers: Buffer[] }> {
+  ): Promise<{ summary: Record<string, unknown> }> {
     const ctx = this.buildClinicalContext(transcription, vitals);
-    const tts = new TtsChunkStreamer(
-      (text) => this.synthesizeSpeechMp3(text),
-      this.TTS_FIRST_MIN_CHARS,
-      this.TTS_MIN_CHARS,
-    );
 
-    const quickTask = this.streamQuickClinicalSnapshot(transcription, vitals, emit, tts);
+    const quickTask = this.streamQuickClinicalSnapshot(transcription, vitals, emit);
     const fullTask = this.streamFullAnalysis(transcription, vitals, emit);
 
     const [quickText, fullSummary] = await Promise.all([quickTask, fullTask]);
@@ -562,11 +565,15 @@ Output fields in this exact order (clinicalSummary FIRST):
     const finalClinical = this.pickBestClinicalSummary(quickText, safeSummary);
     safeSummary.clinicalSummary = finalClinical;
 
-    tts.feed(finalClinical, emit);
-    await tts.flush(finalClinical, emit);
-
+    await emit({ type: 'clinical_summary_ready', clinicalSummary: finalClinical });
+    await emit({
+      type: 'recommendations_ready',
+      recommendations: Array.isArray(safeSummary.recommendations)
+        ? safeSummary.recommendations
+        : [],
+    });
     await emit({ type: 'summary_complete', summary: safeSummary });
-    return { summary: safeSummary, audioBuffers: tts.audioBuffers };
+    return { summary: safeSummary };
   }
 
   /** Fast plain-text stream — symptoms first, ~1-2s */
@@ -574,7 +581,6 @@ Output fields in this exact order (clinicalSummary FIRST):
     transcription: string,
     vitals: VitalsDto | undefined,
     emit: StreamEmitter,
-    tts: TtsChunkStreamer,
   ): Promise<string> {
     const { systemPrompt, userPrompt } = this.buildQuickClinicalPrompts(transcription, vitals);
     const ctx = this.buildClinicalContext(transcription, vitals);
@@ -583,15 +589,15 @@ Output fields in this exact order (clinicalSummary FIRST):
     let fullText = '';
     for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 220, 0.35)) {
       fullText += delta;
+      await emit({ type: 'summary_chunk', delta, text: fullText });
       await emit({ type: 'clinical_summary_delta', delta, fullText });
-      tts.feed(fullText, emit);
     }
 
     const trimmed = fullText.trim();
     if (trimmed && this.isDismissiveClinicalText(trimmed) && ctx.symptomHints.length > 0) {
       const fallback = `The patient is presenting with ${ctx.symptomHints.join(' and ')}. Although heart rate and oxygen levels may appear within normal limits, these symptoms still require medical attention — especially chest pain and severe headache. Please seek evaluation promptly.`;
+      await emit({ type: 'summary_chunk', delta: fallback, text: fallback });
       await emit({ type: 'clinical_summary_delta', delta: fallback, fullText: fallback });
-      tts.feed(fallback, emit);
       return fallback;
     }
 
@@ -609,13 +615,14 @@ Output fields in this exact order (clinicalSummary FIRST):
     let fullText = '';
     let clinicalSummary = '';
 
-    for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 1200, 0.5)) {
+    for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 850, 0.45)) {
       fullText += delta;
 
       const nextClinical = this.extractClinicalSummaryFromPartialJson(fullText);
       if (nextClinical.length > clinicalSummary.length && !this.isDismissiveClinicalText(nextClinical)) {
         const clinicalDelta = nextClinical.slice(clinicalSummary.length);
         clinicalSummary = nextClinical;
+        await emit({ type: 'summary_chunk', delta: clinicalDelta, text: clinicalSummary });
         await emit({ type: 'clinical_summary_delta', delta: clinicalDelta, fullText: clinicalSummary });
       }
     }
@@ -623,6 +630,24 @@ Output fields in this exact order (clinicalSummary FIRST):
     const summary = this.parseSummaryJson(fullText);
     const ctx = this.buildClinicalContext(transcription, vitals);
     return this.applyClinicalSafetyOverrides(summary, transcription, ctx.symptomHints);
+  }
+
+  private async createSummaryAudio(
+    clinicalText: string,
+  ): Promise<{ audioUrl: string; cloudinaryName: string } | null> {
+    const text = clinicalText.trim();
+    if (!text) return null;
+
+    const audioPath = await this.saveSpeechToFile(text);
+    try {
+      const data: any = await this.cloudinaryService.uploadFile(audioPath);
+      return {
+        audioUrl: data.url,
+        cloudinaryName: data.name,
+      };
+    } finally {
+      fs.unlink(audioPath, () => {});
+    }
   }
 
   // ────────────────────────────────────────────────────────────
@@ -812,29 +837,25 @@ Output fields in this exact order (clinicalSummary FIRST):
 
   /** POST /summary/stream — live SSE summary + TTS chunks */
   async streamCreateSummary(voiceId: string, vitals: VitalsDto | undefined, emit: StreamEmitter) {
-    const record = await this.voiceModel.findOne({ _id: voiceId }).select('transcription').lean();
+    const startedAt = Date.now();
+    await emit({ type: 'started', voiceId, stage: 'summary_stream' });
+
+    const record = await this.voiceModel.findById(voiceId).select('transcription').lean();
     if (!record) throw new NotFoundException(`No voice record found for voiceId: ${voiceId}`);
 
+    await emit({ type: 'progress', stage: 'voice_loaded', elapsedMs: Date.now() - startedAt });
     await emit({ type: 'transcription_start' });
+    await emit({ type: 'transcription_ready', transcription: record.transcription });
     await emit({ type: 'transcription', text: record.transcription });
 
-    const { summary, audioBuffers } = await this.streamHealthSummary(record.transcription, vitals, emit);
+    const { summary } = await this.streamHealthSummary(record.transcription, vitals, emit);
     const generatedAt = new Date().toISOString();
-
-    let audioUrl: string | undefined;
-    let cloudinaryName: string | undefined;
-    if (audioBuffers.length > 0) {
-      const audioPath = await this.saveAudioBuffersToFile(audioBuffers);
-      const data: any = await this.cloudinaryService.uploadFile(audioPath);
-      fs.unlinkSync(audioPath);
-      cloudinaryName = data.name;
-      audioUrl = data.url;
-    }
+    await emit({ type: 'progress', stage: 'summary_ready', elapsedMs: Date.now() - startedAt });
 
     const summaryEntry = {
       vitals: vitals ?? null,
       summary,
-      audioUrl: cloudinaryName ?? null,
+      audioUrl: null,
       generatedAt,
     };
 
@@ -845,6 +866,7 @@ Output fields in this exact order (clinicalSummary FIRST):
         $set: { latestSummary: summaryEntry },
       },
     );
+    await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
     await emit({
       type: 'done',
@@ -852,8 +874,40 @@ Output fields in this exact order (clinicalSummary FIRST):
       transcription: record.transcription,
       summary,
       generatedAt,
-      audioUrl,
+      audioPending: true,
+      data: {
+        voiceId,
+        transcription: record.transcription,
+        summary,
+        generatedAt,
+        audioPending: true,
+      },
     });
+
+    let audioUrl: string | undefined;
+    let cloudinaryName: string | undefined;
+    const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    try {
+      await emit({ type: 'audio_start' });
+      const audio = await this.createSummaryAudio(clinicalText);
+      if (audio) {
+        audioUrl = audio.audioUrl;
+        cloudinaryName = audio.cloudinaryName;
+        await this.voiceModel.updateOne(
+          { _id: voiceId, 'summaries.generatedAt': generatedAt },
+          {
+            $set: {
+              'summaries.$.audioUrl': cloudinaryName,
+              'latestSummary.audioUrl': cloudinaryName,
+            },
+          },
+        );
+        await emit({ type: 'audio_ready', audioUrl });
+      }
+    } catch (error: any) {
+      this.logger.warn(`[summary/stream] Audio generation failed: ${error?.message || error}`);
+      await emit({ type: 'error', message: 'Text summary is ready, but audio generation failed.' });
+    }
   }
 
   /** GET /summary/:voiceId */
@@ -929,8 +983,10 @@ Output fields in this exact order (clinicalSummary FIRST):
 
   /** POST /analyze/stream — live SSE transcription + summary + TTS chunks */
   async streamAnalyze(file: Express.Multer.File, vitals: VitalsDto | undefined, emit: StreamEmitter) {
+    const startedAt = Date.now();
     this.logger.log(`[analyze/stream] Transcribing: ${file.originalname}`);
 
+    await emit({ type: 'started', stage: 'analyze_stream' });
     await emit({ type: 'transcription_start' });
 
     let transcription: string;
@@ -940,26 +996,20 @@ Output fields in this exact order (clinicalSummary FIRST):
       fs.unlink(file.path, () => {});
     }
 
+    await emit({ type: 'transcription_ready', transcription });
     await emit({ type: 'transcription', text: transcription });
+    await emit({ type: 'progress', stage: 'transcription_ready', elapsedMs: Date.now() - startedAt });
 
     const createdAt = new Date().toISOString();
-    const { summary, audioBuffers } = await this.streamHealthSummary(transcription, vitals, emit);
+    const { summary } = await this.streamHealthSummary(transcription, vitals, emit);
     const generatedAt = new Date().toISOString();
-
-    let audioUrl: string | undefined;
-    let cloudinaryName: string | undefined;
-    if (audioBuffers.length > 0) {
-      const audioPath = await this.saveAudioBuffersToFile(audioBuffers);
-      const data: any = await this.cloudinaryService.uploadFile(audioPath);
-      fs.unlinkSync(audioPath);
-      cloudinaryName = data.name;
-      audioUrl = data.url;
-    }
+    await emit({ type: 'progress', stage: 'summary_ready', elapsedMs: Date.now() - startedAt });
 
     const summaryEntry = {
       vitals: vitals ?? null,
-      summary: audioUrl ? { ...summary, audioUrl: cloudinaryName } : summary,
+      summary,
       generatedAt,
+      audioUrl: null,
     };
 
     const createVoice = await this.voiceModel.create({
@@ -970,13 +1020,47 @@ Output fields in this exact order (clinicalSummary FIRST):
       latestSummary: summaryEntry,
     });
 
+    await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
+
     await emit({
       type: 'done',
       voiceId: createVoice._id.toString(),
       transcription,
       summary,
       generatedAt,
-      audioUrl,
+      audioPending: true,
+      data: {
+        voiceId: createVoice._id.toString(),
+        transcription,
+        summary,
+        generatedAt,
+        audioPending: true,
+      },
     });
+
+    let audioUrl: string | undefined;
+    let cloudinaryName: string | undefined;
+    const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    try {
+      await emit({ type: 'audio_start' });
+      const audio = await this.createSummaryAudio(clinicalText);
+      if (audio) {
+        audioUrl = audio.audioUrl;
+        cloudinaryName = audio.cloudinaryName;
+        await this.voiceModel.updateOne(
+          { _id: createVoice._id, 'summaries.generatedAt': generatedAt },
+          {
+            $set: {
+              'summaries.$.audioUrl': cloudinaryName,
+              'latestSummary.audioUrl': cloudinaryName,
+            },
+          },
+        );
+        await emit({ type: 'audio_ready', audioUrl });
+      }
+    } catch (error: any) {
+      this.logger.warn(`[analyze/stream] Audio generation failed: ${error?.message || error}`);
+      await emit({ type: 'error', message: 'Text summary is ready, but audio generation failed.' });
+    }
   }
 }
