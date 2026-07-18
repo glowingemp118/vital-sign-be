@@ -28,13 +28,15 @@ export type HealthStreamEvent =
   | { type: 'summary_chunk'; text: string; isCumulative: false }
   | { type: 'summary_delta'; delta: string; fullText: string }
   | { type: 'clinical_summary_delta'; delta: string; fullText: string }
+  | { type: 'patient_summary_ready'; patientSummary: string; urgencyLevel: string }
   | { type: 'clinical_summary_ready'; clinicalSummary: string }
+  | { type: 'doctor_assessment_ready'; doctorAssessment: Record<string, unknown> }
   | { type: 'recommendations_ready'; recommendations: unknown[] }
   | { type: 'audio_chunk'; index: number; text: string; audioBase64: string; format: 'mp3' }
   | { type: 'audio_start' }
   | { type: 'audio_ready'; audioUrl: string }
   | { type: 'summary_complete'; summary: Record<string, unknown> }
-  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; clinicalSummary: string; recommendations: unknown[]; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
+  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; patientSummary: string; clinicalSummary: string; doctorAssessment: Record<string, unknown>; recommendations: unknown[]; urgencyLevel: string; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
   | { type: 'error'; message: string };
 
 type StreamEmitter = (event: HealthStreamEvent) => void | Promise<void>;
@@ -295,28 +297,42 @@ NEVER call the statement unclear if symptoms were named. Be fast, warm, and spec
   private buildFullAnalysisPrompts(transcription: string, vitals?: VitalsDto) {
     const ctx = this.buildClinicalContext(transcription, vitals);
 
-    const systemPrompt = `You are an advanced AI health analyst. Return ONLY valid JSON, no markdown.
+    const systemPrompt = `You are an advanced clinical triage assistant preparing a concise doctor-facing assessment. Return ONLY valid JSON, no markdown.
 
 ${this.CLINICAL_ANALYSIS_RULES}
 
-Output fields in this exact order (clinicalSummary FIRST):
+STYLE:
+- Be clinical, structured, concise, and direct.
+- Avoid long narrative paragraphs.
+- Do not soften serious cases. If red flags exist, state urgency plainly.
+- Keep differentialDiagnosis to 2-3 most likely possibilities, each with a one-line rationale.
+- Actionable recommendations must include key questions the doctor should ask and checks/tests to consider.
+
+Output fields in this exact order:
 
 {
-  "clinicalSummary"  : "3-5 sentences. Sentence 1 MUST name every symptom the patient reported. Then interpret vitals. Then urgency.",
+  "patientSummary"   : "2 short direct sentences for the patient. Plain language. Clearly state seriousness and what to do next.",
+  "clinicalSummary"  : "1-2 concise doctor-facing sentences only.",
+  "doctorAssessment" : {
+    "chiefComplaint": "short phrase naming the main complaint in patient words",
+    "keyFindings": ["abnormal vitals, reported symptoms, and red flags only"],
+    "urgency": { "level": "normal | warning | urgent", "justification": "one short reason" },
+    "differentialDiagnosis": [{ "condition": "string", "rationale": "one-line rationale" }],
+    "actionableRecommendations": {
+      "keyQuestions": ["specific question doctor should ask"],
+      "clinicalChecks": ["specific exam/check/test/measurement to consider"],
+      "nextSteps": ["specific immediate/soon/routine action"]
+    }
+  },
   "overallStatus"    : "normal | warning | urgent",
   "reportedSymptoms" : ["every symptom the patient explicitly mentioned"],
-  "symptomAnalysis"  : [{ "symptom": "name", "severity": "mild|moderate|severe", "interpretation": "string", "concern": "low|moderate|high" }],
   "vitalBreakdown"   : [{ "vital": "name", "value": "reading", "status": "normal|elevated|low|critical|not_provided", "interpretation": "string" }],
-  "riskPatterns"     : ["string"],
-  "predictiveFlags"  : ["string"],
   "recommendations"  : [{ "priority": "immediate|soon|routine", "action": "string", "reason": "string" }],
-  "specialistAdvice" : "string",
-  "supportMessage"   : "string",
   "urgentAlert"      : "string or null",
   "disclaimer"       : "Vital Signs AI is not a doctor. AI-generated suggestions are not medical advice or diagnosis."
 }`;
 
-    const userPrompt = `${ctx.userPrompt}\n\nFull clinical analysis as JSON. Address every reported symptom.`;
+    const userPrompt = `${ctx.userPrompt}\n\nCreate the doctor-facing structured assessment and patient-facing message. Address every reported symptom.`;
 
     return { systemPrompt, userPrompt };
   }
@@ -374,6 +390,159 @@ Output fields in this exact order (clinicalSummary FIRST):
     }
 
     return fullText || quickText;
+  }
+
+  private getUrgencyLevel(summary: Record<string, unknown>, transcription: string): 'normal' | 'warning' | 'urgent' {
+    const status = String(summary.overallStatus || '').toLowerCase();
+    if (status === 'urgent' || status === 'warning' || status === 'normal') {
+      return status;
+    }
+
+    const text = transcription.toLowerCase();
+    if (/chest pain|pain in (?:my )?chest|difficulty breathing|shortness of breath|can'?t breathe|stroke|face drooping|slurred speech|passed out|fainting/.test(text)) {
+      return 'urgent';
+    }
+    if (/severe headache|strong headache|bad headache|dizz(?:y|iness)|palpitations|fever/.test(text)) {
+      return 'warning';
+    }
+    return 'normal';
+  }
+
+  private buildPatientSummary(
+    summary: Record<string, unknown>,
+    transcription: string,
+    symptomHints: string[],
+  ): string {
+    const existing = typeof summary.patientSummary === 'string' ? summary.patientSummary.trim() : '';
+    if (existing && !this.isDismissiveClinicalText(existing)) return existing;
+
+    const urgency = this.getUrgencyLevel(summary, transcription);
+    const symptoms = symptomHints.length
+      ? symptomHints.join(' and ')
+      : 'the symptoms you described';
+
+    if (urgency === 'urgent') {
+      return `Your symptoms (${symptoms}) may be serious. Please seek urgent medical care now or contact emergency services if symptoms are severe or worsening.`;
+    }
+    if (urgency === 'warning') {
+      return `Your symptoms (${symptoms}) need medical attention soon. Please contact your doctor today and seek urgent help if they get worse.`;
+    }
+    return `Your readings do not show an obvious emergency, but your symptoms still matter. Monitor them closely and contact your doctor if they persist or worsen.`;
+  }
+
+  private buildDoctorAssessmentFallback(
+    summary: Record<string, unknown>,
+    transcription: string,
+    vitals: VitalsDto | undefined,
+    symptomHints: string[],
+  ): Record<string, unknown> {
+    const existing = summary.doctorAssessment;
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+      return existing as Record<string, unknown>;
+    }
+
+    const urgency = this.getUrgencyLevel(summary, transcription);
+    const symptoms = symptomHints.length ? symptomHints : ['reported symptoms'];
+    const vitalText = this.buildVitalsText(vitals);
+    const keyFindings = [
+      `Chief symptoms: ${symptoms.join(', ')}`,
+      ...vitalText
+        .split('\n')
+        .filter((line) => line.startsWith('- '))
+        .map((line) => line.slice(2)),
+    ];
+
+    const hasChestPain = /chest pain|pain in (?:my )?chest/i.test(transcription);
+    const hasHeadache = /headache|migraine/i.test(transcription);
+
+    const differentials: Array<Record<string, string>> = [];
+    if (hasChestPain) {
+      differentials.push(
+        { condition: 'Acute coronary syndrome or cardiac chest pain', rationale: 'Chest pain requires exclusion of cardiac causes even with normal vitals.' },
+        { condition: 'Musculoskeletal or reflux-related chest pain', rationale: 'Common non-cardiac causes remain possible after urgent causes are excluded.' },
+      );
+    }
+    if (hasHeadache) {
+      differentials.push({ condition: 'Primary headache or migraine', rationale: 'Headache is reported; characterize severity, onset, and neurologic symptoms.' });
+    }
+    if (differentials.length === 0) {
+      differentials.push(
+        { condition: 'Benign self-limited illness', rationale: 'No specific red-flag diagnosis is clear from available data.' },
+        { condition: 'Early evolving condition', rationale: 'Symptoms may progress and should be reassessed if persistent.' },
+      );
+    }
+
+    return {
+      chiefComplaint: symptoms.join(', '),
+      keyFindings,
+      urgency: {
+        level: urgency,
+        justification:
+          urgency === 'urgent'
+            ? 'Reported red-flag symptoms require immediate clinical assessment.'
+            : urgency === 'warning'
+              ? 'Symptoms need timely evaluation and monitoring for progression.'
+              : 'No red flags identified from provided symptoms and vitals.',
+      },
+      differentialDiagnosis: differentials.slice(0, 3),
+      actionableRecommendations: {
+        keyQuestions: [
+          'When did symptoms start and are they worsening?',
+          'Any associated shortness of breath, dizziness, fainting, neurologic deficit, fever, or severe pain?',
+          'Any relevant cardiac, neurologic, diabetes, medication, or pregnancy history?',
+        ],
+        clinicalChecks: [
+          'Repeat full vital signs and pain score.',
+          hasChestPain ? 'Consider ECG and urgent chest pain evaluation.' : 'Perform focused exam based on chief complaint.',
+          hasHeadache ? 'Check neurologic status and red flags for severe/new headache.' : 'Assess for red flags and symptom progression.',
+        ],
+        nextSteps:
+          urgency === 'urgent'
+            ? ['Escalate for urgent medical evaluation now.']
+            : urgency === 'warning'
+              ? ['Arrange same-day or soon clinical follow-up.']
+              : ['Provide routine guidance and return precautions.'],
+      },
+    };
+  }
+
+  private normalizeAssessmentSummary(
+    summary: Record<string, unknown>,
+    transcription: string,
+    vitals: VitalsDto | undefined,
+    symptomHints: string[],
+  ): Record<string, unknown> {
+    const normalized = { ...summary };
+    const urgency = this.getUrgencyLevel(normalized, transcription);
+    normalized.overallStatus = urgency;
+    normalized.patientSummary = this.buildPatientSummary(normalized, transcription, symptomHints);
+    normalized.doctorAssessment = this.buildDoctorAssessmentFallback(normalized, transcription, vitals, symptomHints);
+
+    const doctor = normalized.doctorAssessment as Record<string, any>;
+    const doctorUrgency = doctor.urgency && typeof doctor.urgency === 'object' ? doctor.urgency : {};
+    doctor.urgency = {
+      ...doctorUrgency,
+      level: urgency,
+      justification:
+        doctorUrgency.justification ||
+        (urgency === 'urgent'
+          ? 'Reported red-flag symptoms require immediate clinical assessment.'
+          : urgency === 'warning'
+            ? 'Symptoms require timely review.'
+            : 'No immediate red flags identified.'),
+    };
+
+    if (!Array.isArray(normalized.recommendations) || normalized.recommendations.length === 0) {
+      const actionable = doctor.actionableRecommendations as Record<string, unknown> | undefined;
+      const nextSteps = Array.isArray(actionable?.nextSteps) ? actionable.nextSteps : [];
+      normalized.recommendations = nextSteps.map((step) => ({
+        priority: urgency === 'urgent' ? 'immediate' : urgency === 'warning' ? 'soon' : 'routine',
+        action: String(step),
+        reason: doctor.urgency.justification,
+      }));
+    }
+
+    return normalized;
   }
 
   private parseSummaryJson(raw: string): Record<string, unknown> {
@@ -546,7 +715,8 @@ Output fields in this exact order (clinicalSummary FIRST):
     const raw: string = data.choices[0].message.content.trim();
     const summary = this.parseSummaryJson(raw);
     const ctx = this.buildClinicalContext(transcription, vitals);
-    return this.applyClinicalSafetyOverrides(summary, transcription, ctx.symptomHints);
+    const safeSummary = this.applyClinicalSafetyOverrides(summary, transcription, ctx.symptomHints);
+    return this.normalizeAssessmentSummary(safeSummary, transcription, vitals, ctx.symptomHints);
   }
 
   private async streamHealthSummary(
@@ -555,25 +725,47 @@ Output fields in this exact order (clinicalSummary FIRST):
     emit: StreamEmitter,
   ): Promise<{ summary: Record<string, unknown> }> {
     const ctx = this.buildClinicalContext(transcription, vitals);
+    const immediatePatientSummary = this.buildPatientSummary({}, transcription, ctx.symptomHints);
+    const immediateUrgency = this.getUrgencyLevel({}, transcription);
+    await emit({
+      type: 'patient_summary_ready',
+      patientSummary: immediatePatientSummary,
+      urgencyLevel: immediateUrgency,
+    });
 
-    const quickTask = this.streamQuickClinicalSnapshot(transcription, vitals, emit);
-    const fullTask = this.streamFullAnalysis(transcription, vitals, emit);
-
-    const [quickText, fullSummary] = await Promise.all([quickTask, fullTask]);
-
+    const fullSummary = await this.streamFullAnalysis(transcription, vitals, emit);
     const safeSummary = this.applyClinicalSafetyOverrides(fullSummary, transcription, ctx.symptomHints);
-    const finalClinical = this.pickBestClinicalSummary(quickText, safeSummary);
-    safeSummary.clinicalSummary = finalClinical;
+    const normalizedSummary = this.normalizeAssessmentSummary(safeSummary, transcription, vitals, ctx.symptomHints);
+    const finalClinical =
+      typeof normalizedSummary.clinicalSummary === 'string'
+        ? normalizedSummary.clinicalSummary
+        : String(normalizedSummary.patientSummary || immediatePatientSummary);
+    const finalPatientSummary = String(normalizedSummary.patientSummary || immediatePatientSummary);
+    const doctorAssessment =
+      normalizedSummary.doctorAssessment && typeof normalizedSummary.doctorAssessment === 'object'
+        ? (normalizedSummary.doctorAssessment as Record<string, unknown>)
+        : {};
+    const urgencyLevel = this.getUrgencyLevel(normalizedSummary, transcription);
 
+    normalizedSummary.clinicalSummary = finalClinical;
+    normalizedSummary.patientSummary = finalPatientSummary;
+    normalizedSummary.doctorAssessment = doctorAssessment;
+
+    await emit({
+      type: 'patient_summary_ready',
+      patientSummary: finalPatientSummary,
+      urgencyLevel,
+    });
     await emit({ type: 'clinical_summary_ready', clinicalSummary: finalClinical });
+    await emit({ type: 'doctor_assessment_ready', doctorAssessment });
     await emit({
       type: 'recommendations_ready',
-      recommendations: Array.isArray(safeSummary.recommendations)
-        ? safeSummary.recommendations
+      recommendations: Array.isArray(normalizedSummary.recommendations)
+        ? normalizedSummary.recommendations
         : [],
     });
-    await emit({ type: 'summary_complete', summary: safeSummary });
-    return { summary: safeSummary };
+    await emit({ type: 'summary_complete', summary: normalizedSummary });
+    return { summary: normalizedSummary };
   }
 
   /** Fast plain-text stream — symptoms first, ~1-2s */
@@ -869,25 +1061,37 @@ Output fields in this exact order (clinicalSummary FIRST):
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
     const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    const patientSummary = typeof summary.patientSummary === 'string' ? summary.patientSummary : clinicalSummary;
+    const doctorAssessment =
+      summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
+        ? (summary.doctorAssessment as Record<string, unknown>)
+        : {};
     const recommendations = Array.isArray(summary.recommendations)
       ? summary.recommendations
       : [];
+    const urgencyLevel = this.getUrgencyLevel(summary, record.transcription);
 
     await emit({
       type: 'done',
       voiceId,
       transcription: record.transcription,
       summary,
+      patientSummary,
       clinicalSummary,
+      doctorAssessment,
       recommendations,
+      urgencyLevel,
       generatedAt,
       audioPending: true,
       data: {
         voiceId,
         transcription: record.transcription,
         summary,
+        patientSummary,
         clinicalSummary,
+        doctorAssessment,
         recommendations,
+        urgencyLevel,
         generatedAt,
         audioPending: true,
       },
@@ -897,7 +1101,7 @@ Output fields in this exact order (clinicalSummary FIRST):
     let cloudinaryName: string | undefined;
     try {
       await emit({ type: 'audio_start' });
-      const audio = await this.createSummaryAudio(clinicalSummary);
+      const audio = await this.createSummaryAudio(patientSummary);
       if (audio) {
         audioUrl = audio.audioUrl;
         cloudinaryName = audio.cloudinaryName;
@@ -1031,25 +1235,37 @@ Output fields in this exact order (clinicalSummary FIRST):
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
     const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
+    const patientSummary = typeof summary.patientSummary === 'string' ? summary.patientSummary : clinicalSummary;
+    const doctorAssessment =
+      summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
+        ? (summary.doctorAssessment as Record<string, unknown>)
+        : {};
     const recommendations = Array.isArray(summary.recommendations)
       ? summary.recommendations
       : [];
+    const urgencyLevel = this.getUrgencyLevel(summary, transcription);
 
     await emit({
       type: 'done',
       voiceId: createVoice._id.toString(),
       transcription,
       summary,
+      patientSummary,
       clinicalSummary,
+      doctorAssessment,
       recommendations,
+      urgencyLevel,
       generatedAt,
       audioPending: true,
       data: {
         voiceId: createVoice._id.toString(),
         transcription,
         summary,
+        patientSummary,
         clinicalSummary,
+        doctorAssessment,
         recommendations,
+        urgencyLevel,
         generatedAt,
         audioPending: true,
       },
@@ -1059,7 +1275,7 @@ Output fields in this exact order (clinicalSummary FIRST):
     let cloudinaryName: string | undefined;
     try {
       await emit({ type: 'audio_start' });
-      const audio = await this.createSummaryAudio(clinicalSummary);
+      const audio = await this.createSummaryAudio(patientSummary);
       if (audio) {
         audioUrl = audio.audioUrl;
         cloudinaryName = audio.cloudinaryName;
