@@ -28,7 +28,7 @@ export type HealthStreamEvent =
   | { type: 'summary_chunk'; text: string; isCumulative: false }
   | { type: 'summary_delta'; delta: string; fullText: string }
   | { type: 'clinical_summary_delta'; delta: string; fullText: string }
-  | { type: 'patient_summary_ready'; patientSummary: string; urgencyLevel: string }
+  | { type: 'patient_summary_ready'; patientMessage: string; patientSummary: string; urgencyLevel: string }
   | { type: 'clinical_summary_ready'; clinicalSummary: string }
   | { type: 'doctor_assessment_ready'; doctorAssessment: Record<string, unknown> }
   | { type: 'recommendations_ready'; recommendations: unknown[] }
@@ -36,7 +36,7 @@ export type HealthStreamEvent =
   | { type: 'audio_start' }
   | { type: 'audio_ready'; audioUrl: string }
   | { type: 'summary_complete'; summary: Record<string, unknown> }
-  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; patientSummary: string; clinicalSummary: string; doctorAssessment: Record<string, unknown>; recommendations: unknown[]; urgencyLevel: string; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
+  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; patientMessage: string; patientSummary: string; clinicalSummary: string; doctorAssessment: Record<string, unknown>; recommendations: unknown[]; urgencyLevel: string; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
   | { type: 'error'; message: string };
 
 type StreamEmitter = (event: HealthStreamEvent) => void | Promise<void>;
@@ -184,7 +184,8 @@ export class HealthVoiceService {
   private extractSymptomHints(transcription: string): string[] {
     const patterns: [RegExp, string][] = [
       [/chest pain|pain in (?:my )?chest/i, 'chest pain'],
-      [/strong headache|severe headache|bad headache|headache|head ache|migraine/i, 'headache'],
+      [/strong headache|severe headache|bad headache/i, 'severe headache'],
+      [/headache|head ache|migraine/i, 'headache'],
       [/shortness of breath|difficulty breathing|trouble breathing|can'?t breathe/i, 'breathing difficulty'],
       [/dizz(?:y|iness)/i, 'dizziness'],
       [/nausea|vomiting/i, 'nausea/vomiting'],
@@ -208,7 +209,7 @@ export class HealthVoiceService {
     const patientStatement = (transcription || '').trim() || 'No voice statement was captured.';
     const vitalsText = this.buildVitalsText(vitals);
     const symptomHints = this.extractSymptomHints(patientStatement);
-    const hasUrgentSymptoms = /chest pain|difficulty breathing|can'?t breathe|stroke|face drooping|slurred speech|severe headache|passed out|fainting/i.test(
+    const hasUrgentSymptoms = /chest pain|pain in (?:my )?chest|difficulty breathing|can'?t breathe|stroke|face drooping|slurred speech|severe headache|passed out|fainting/i.test(
       patientStatement,
     );
 
@@ -236,8 +237,9 @@ ${hasUrgentSymptoms ? 'URGENT SYMPTOM FLAG: Patient reported potentially serious
 2. NEVER say the statement is "unclear", "vague", or "non-specific" when the patient named concrete symptoms (e.g. headache, chest pain).
 3. Vitals are supporting data only. Normal HR or SpO2 does NOT mean the patient is fine.
 4. Always explain how reported symptoms and vitals fit together (e.g. "chest pain with HR 70 and SpO2 98% — vitals alone do not exclude cardiac causes").
-5. Chest pain, severe headache, breathing difficulty, or stroke-like symptoms → overallStatus must be "warning" or "urgent", not "normal".
-6. Give specific, actionable next steps — not generic wellness advice when symptoms are present.`;
+5. Chest pain, severe headache, breathing difficulty, fainting, stroke-like symptoms, very low BP, SpO2 below 92%, extreme heart rate, or critically abnormal glucose → overallStatus must be "urgent".
+6. For urgent cases, the patient message must be unmistakable: say this may be serious and advise urgent care/emergency help now.
+7. Doctor content must be clinical and specific: explain why each differential is plausible, name red flags, and list concrete checks/tests/questions — not generic "follow up" advice.`;
 
   private buildSummaryPrompts(transcription: string, vitals?: VitalsDto) {
     const ctx = this.buildClinicalContext(transcription, vitals);
@@ -305,19 +307,23 @@ STYLE:
 - Be clinical, structured, concise, and direct.
 - Avoid long narrative paragraphs.
 - Do not soften serious cases. If red flags exist, state urgency plainly.
-- Keep differentialDiagnosis to 2-3 most likely possibilities, each with a one-line rationale.
-- Actionable recommendations must include key questions the doctor should ask and checks/tests to consider.
+- Keep differentialDiagnosis to 2-3 most likely possibilities, each with a clinically meaningful rationale tied to symptoms/vitals/red flags.
+- Urgency justification must mention the specific trigger(s), e.g. chest pain, severe headache, hypotension, low SpO2, abnormal glucose.
+- Actionable recommendations must include concrete key questions, focused exam items, repeat measurements, and tests/checks to consider.
+- For chest pain, include ACS/cardiac cause until excluded and recommend ECG/vitals/red-flag assessment.
+- For severe headache, include neurologic red flags and consider acute neurologic causes if sudden/severe or with deficits.
+- For very low BP, mention hypotension/shock risk and immediate reassessment.
 
 Output fields in this exact order:
 
 {
-  "patientSummary"   : "2 short direct sentences for the patient. Plain language. Clearly state seriousness and what to do next.",
+  "patientSummary"   : "2-3 short direct sentences for the patient. Plain language. In urgent cases clearly say urgent medical care is needed now.",
   "clinicalSummary"  : "1-2 concise doctor-facing sentences only.",
   "doctorAssessment" : {
     "chiefComplaint": "short phrase naming the main complaint in patient words",
     "keyFindings": ["abnormal vitals, reported symptoms, and red flags only"],
     "urgency": { "level": "normal | warning | urgent", "justification": "one short reason" },
-    "differentialDiagnosis": [{ "condition": "string", "rationale": "one-line rationale" }],
+    "differentialDiagnosis": [{ "condition": "string", "rationale": "specific rationale tied to this patient's symptoms/vitals" }],
     "actionableRecommendations": {
       "keyQuestions": ["specific question doctor should ask"],
       "clinicalChecks": ["specific exam/check/test/measurement to consider"],
@@ -394,18 +400,97 @@ Output fields in this exact order:
 
   private getUrgencyLevel(summary: Record<string, unknown>, transcription: string): 'normal' | 'warning' | 'urgent' {
     const status = String(summary.overallStatus || '').toLowerCase();
+    const text = transcription.toLowerCase();
+
+    // Backend-enforced red flags override any soft model output.
+    if (
+      /chest pain|pain in (?:my )?chest|difficulty breathing|shortness of breath|can'?t breathe|stroke|face drooping|slurred speech|passed out|fainting/.test(text) ||
+      this.getAbnormalVitalFindings((summary as any).__vitals).some((v) => v.severity === 'critical')
+    ) {
+      return 'urgent';
+    }
+
     if (status === 'urgent' || status === 'warning' || status === 'normal') {
       return status;
     }
 
-    const text = transcription.toLowerCase();
-    if (/chest pain|pain in (?:my )?chest|difficulty breathing|shortness of breath|can'?t breathe|stroke|face drooping|slurred speech|passed out|fainting/.test(text)) {
-      return 'urgent';
-    }
     if (/severe headache|strong headache|bad headache|dizz(?:y|iness)|palpitations|fever/.test(text)) {
       return 'warning';
     }
     return 'normal';
+  }
+
+  private parseBloodPressure(value?: string): { systolic?: number; diastolic?: number } {
+    const match = String(value || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+    if (!match) return {};
+    return {
+      systolic: Number(match[1]),
+      diastolic: Number(match[2]),
+    };
+  }
+
+  private getAbnormalVitalFindings(vitals?: VitalsDto): Array<{
+    vital: string;
+    value: string;
+    severity: 'warning' | 'critical';
+    finding: string;
+  }> {
+    if (!vitals) return [];
+    const findings: Array<{
+      vital: string;
+      value: string;
+      severity: 'warning' | 'critical';
+      finding: string;
+    }> = [];
+
+    const bp = this.parseBloodPressure(vitals.bloodPressure);
+    if (bp.systolic || bp.diastolic) {
+      const value = `${bp.systolic ?? '?'}/${bp.diastolic ?? '?'}`;
+      if ((bp.systolic !== undefined && bp.systolic < 90) || (bp.diastolic !== undefined && bp.diastolic < 60)) {
+        findings.push({
+          vital: 'Blood Pressure',
+          value,
+          severity: 'critical',
+          finding: `Very low blood pressure (${value}) raises concern for hypotension, poor perfusion, dehydration, bleeding, sepsis, or shock depending on context.`,
+        });
+      } else if ((bp.systolic !== undefined && bp.systolic >= 140) || (bp.diastolic !== undefined && bp.diastolic >= 90)) {
+        findings.push({
+          vital: 'Blood Pressure',
+          value,
+          severity: 'warning',
+          finding: `Elevated blood pressure (${value}) may increase cardiovascular risk and should be rechecked.`,
+        });
+      }
+    }
+
+    if (typeof vitals.spo2 === 'number' && vitals.spo2 < 92) {
+      findings.push({
+        vital: 'SpO2',
+        value: `${vitals.spo2}%`,
+        severity: 'critical',
+        finding: `Low oxygen saturation (${vitals.spo2}%) requires urgent assessment for respiratory or circulatory compromise.`,
+      });
+    }
+
+    if (typeof vitals.heartRate === 'number' && (vitals.heartRate < 50 || vitals.heartRate > 120)) {
+      findings.push({
+        vital: 'Heart Rate',
+        value: `${vitals.heartRate} bpm`,
+        severity: vitals.heartRate < 40 || vitals.heartRate > 140 ? 'critical' : 'warning',
+        finding: `Abnormal heart rate (${vitals.heartRate} bpm) should be interpreted with symptoms and repeated.`,
+      });
+    }
+
+    if (typeof vitals.glucose === 'number' && (vitals.glucose < 70 || vitals.glucose > 250)) {
+      findings.push({
+        vital: 'Glucose',
+        value: `${vitals.glucose} mg/dL`,
+        severity: vitals.glucose < 54 || vitals.glucose > 300 ? 'critical' : 'warning',
+        finding: `Abnormal glucose (${vitals.glucose} mg/dL) may require prompt correction and clinical review.`,
+      });
+    }
+
+    return findings;
   }
 
   private buildPatientSummary(
@@ -413,21 +498,55 @@ Output fields in this exact order:
     transcription: string,
     symptomHints: string[],
   ): string {
-    const existing = typeof summary.patientSummary === 'string' ? summary.patientSummary.trim() : '';
-    if (existing && !this.isDismissiveClinicalText(existing)) return existing;
-
     const urgency = this.getUrgencyLevel(summary, transcription);
-    const symptoms = symptomHints.length
-      ? symptomHints.join(' and ')
+    const symptoms = this.formatPatientSymptoms(symptomHints);
+    const symptomText = symptoms
+      ? symptoms
       : 'the symptoms you described';
+    const vitals = (summary as any).__vitals as VitalsDto | undefined;
+    const criticalVitals = this.getAbnormalVitalFindings(vitals).filter((v) => v.severity === 'critical');
+    const criticalText = criticalVitals.length
+      ? ` ${this.formatPatientVitalWarning(criticalVitals)}`
+      : '';
 
     if (urgency === 'urgent') {
-      return `Your symptoms (${symptoms}) may be serious. Please seek urgent medical care now or contact emergency services if symptoms are severe or worsening.`;
+      return `This could be an emergency. You reported ${symptomText}.${criticalText} Please seek urgent medical care now or call emergency services immediately, especially if symptoms are new, severe, or worsening.`;
     }
     if (urgency === 'warning') {
-      return `Your symptoms (${symptoms}) need medical attention soon. Please contact your doctor today and seek urgent help if they get worse.`;
+      return `Your symptoms need medical attention soon: ${symptomText}. Please contact your doctor today, and seek urgent help if pain, breathing, dizziness, weakness, or confusion develops or worsens.`;
     }
-    return `Your readings do not show an obvious emergency, but your symptoms still matter. Monitor them closely and contact your doctor if they persist or worsen.`;
+
+    const existing = typeof summary.patientSummary === 'string' ? summary.patientSummary.trim() : '';
+    if (existing && !this.isDismissiveClinicalText(existing)) return existing;
+    return `Your readings do not show an obvious emergency right now. Keep monitoring your symptoms and contact your doctor if they persist, worsen, or feel unusual for you.`;
+  }
+
+  private formatPatientSymptoms(symptomHints: string[]): string {
+    const symptoms = [...new Set(symptomHints.filter(Boolean))];
+    if (symptoms.includes('severe headache')) {
+      const index = symptoms.indexOf('headache');
+      if (index >= 0) symptoms.splice(index, 1);
+    }
+    if (symptoms.length === 0) return '';
+    if (symptoms.length === 1) return symptoms[0];
+    return `${symptoms.slice(0, -1).join(', ')} and ${symptoms[symptoms.length - 1]}`;
+  }
+
+  private formatPatientVitalWarning(
+    criticalVitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
+  ): string {
+    const parts = criticalVitals.map((v) => {
+      if (v.vital === 'Blood Pressure') return `your blood pressure is very low (${v.value})`;
+      if (v.vital === 'SpO2') return `your oxygen level is low (${v.value})`;
+      if (v.vital === 'Heart Rate') return `your heart rate is abnormal (${v.value})`;
+      if (v.vital === 'Glucose') return `your glucose is critically abnormal (${v.value})`;
+      return `your ${v.vital.toLowerCase()} is abnormal (${v.value})`;
+    });
+
+    if (parts.length === 1) {
+      return `${parts[0]}, which is a red flag.`;
+    }
+    return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}, which are red flags.`;
   }
 
   private buildDoctorAssessmentFallback(
@@ -436,16 +555,13 @@ Output fields in this exact order:
     vitals: VitalsDto | undefined,
     symptomHints: string[],
   ): Record<string, unknown> {
-    const existing = summary.doctorAssessment;
-    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-      return existing as Record<string, unknown>;
-    }
-
     const urgency = this.getUrgencyLevel(summary, transcription);
     const symptoms = symptomHints.length ? symptomHints : ['reported symptoms'];
     const vitalText = this.buildVitalsText(vitals);
+    const abnormalVitals = this.getAbnormalVitalFindings(vitals);
     const keyFindings = [
       `Chief symptoms: ${symptoms.join(', ')}`,
+      ...abnormalVitals.map((v) => v.finding),
       ...vitalText
         .split('\n')
         .filter((line) => line.startsWith('- '))
@@ -454,56 +570,142 @@ Output fields in this exact order:
 
     const hasChestPain = /chest pain|pain in (?:my )?chest/i.test(transcription);
     const hasHeadache = /headache|migraine/i.test(transcription);
+    const hasSevereHeadache = /severe headache|strong headache|bad headache/i.test(transcription);
+    const hasLowBp = abnormalVitals.some((v) => v.vital === 'Blood Pressure' && v.severity === 'critical');
+    const hasLowSpo2 = abnormalVitals.some((v) => v.vital === 'SpO2' && v.severity === 'critical');
 
     const differentials: Array<Record<string, string>> = [];
     if (hasChestPain) {
       differentials.push(
-        { condition: 'Acute coronary syndrome or cardiac chest pain', rationale: 'Chest pain requires exclusion of cardiac causes even with normal vitals.' },
-        { condition: 'Musculoskeletal or reflux-related chest pain', rationale: 'Common non-cardiac causes remain possible after urgent causes are excluded.' },
+        { condition: 'Acute coronary syndrome / cardiac chest pain', rationale: 'Chest pain is a red flag; ACS must be excluded even if HR or SpO2 appear normal.' },
+        { condition: 'Pulmonary embolism or acute cardiopulmonary cause', rationale: 'Chest pain with any dyspnea, low SpO2, tachycardia, syncope, or hypotension would raise concern for a cardiopulmonary emergency.' },
       );
     }
-    if (hasHeadache) {
-      differentials.push({ condition: 'Primary headache or migraine', rationale: 'Headache is reported; characterize severity, onset, and neurologic symptoms.' });
+    if (hasSevereHeadache) {
+      differentials.push({ condition: 'Secondary headache / acute neurologic cause', rationale: 'Severe or sudden headache requires screening for neurologic deficits, meningismus, hypertensive emergency, hemorrhage, or other secondary causes.' });
+    } else if (hasHeadache) {
+      differentials.push({ condition: 'Primary headache or migraine', rationale: 'Headache is reported; characterize onset, severity, triggers, associated symptoms, and neurologic red flags.' });
+    }
+    if (hasLowBp) {
+      differentials.unshift({ condition: 'Hypotension / shock physiology', rationale: 'Very low blood pressure may indicate dehydration, bleeding, sepsis, medication effect, arrhythmia, or other poor-perfusion state and needs immediate repeat assessment.' });
+    }
+    if (hasLowSpo2) {
+      differentials.unshift({ condition: 'Hypoxemic respiratory or cardiopulmonary process', rationale: 'SpO2 below 92% requires urgent evaluation for respiratory compromise, pneumonia/asthma/COPD exacerbation, PE, or cardiac cause.' });
     }
     if (differentials.length === 0) {
       differentials.push(
-        { condition: 'Benign self-limited illness', rationale: 'No specific red-flag diagnosis is clear from available data.' },
-        { condition: 'Early evolving condition', rationale: 'Symptoms may progress and should be reassessed if persistent.' },
+        { condition: 'Early evolving acute illness', rationale: 'Symptoms may precede objective abnormalities; reassess if persistent or worsening.' },
+        { condition: 'Benign self-limited condition', rationale: 'Possible if symptoms remain mild, vitals stay normal, and no red flags emerge.' },
       );
     }
 
-    return {
+    const fallback = {
       chiefComplaint: symptoms.join(', '),
-      keyFindings,
+      keyFindings: [...new Set(keyFindings)].slice(0, 8),
       urgency: {
         level: urgency,
-        justification:
-          urgency === 'urgent'
-            ? 'Reported red-flag symptoms require immediate clinical assessment.'
-            : urgency === 'warning'
-              ? 'Symptoms need timely evaluation and monitoring for progression.'
-              : 'No red flags identified from provided symptoms and vitals.',
+        justification: this.buildUrgencyJustification(urgency, symptoms, abnormalVitals),
       },
       differentialDiagnosis: differentials.slice(0, 3),
       actionableRecommendations: {
         keyQuestions: [
-          'When did symptoms start and are they worsening?',
-          'Any associated shortness of breath, dizziness, fainting, neurologic deficit, fever, or severe pain?',
-          'Any relevant cardiac, neurologic, diabetes, medication, or pregnancy history?',
+          'Exact onset, duration, progression, severity score, and whether symptoms are new or different from usual?',
+          'Any shortness of breath, sweating, nausea/vomiting, syncope, dizziness, weakness, confusion, neurologic deficit, fever, trauma, or severe/worst-ever pain?',
+          'Relevant history: cardiac disease, hypertension, diabetes, clotting risk, pregnancy, medications, anticoagulants, stimulant use, recent infection, dehydration, or bleeding?',
         ],
         clinicalChecks: [
-          'Repeat full vital signs and pain score.',
-          hasChestPain ? 'Consider ECG and urgent chest pain evaluation.' : 'Perform focused exam based on chief complaint.',
-          hasHeadache ? 'Check neurologic status and red flags for severe/new headache.' : 'Assess for red flags and symptom progression.',
+          'Repeat and confirm full vital signs manually, including BP in both arms if chest pain or hypotension is present; assess orthostatics if safe.',
+          'Assess general appearance, perfusion, mental status, respiratory effort, hydration status, capillary refill, and pain severity.',
+          hasChestPain ? 'Obtain/arrange ECG promptly, assess chest pain features, cardiac risk factors, and consider troponin/emergency chest pain pathway.' : 'Perform focused examination based on chief complaint and red flags.',
+          hasHeadache ? 'Perform focused neurologic exam; check sudden onset, worst headache, neck stiffness, visual symptoms, weakness/numbness, speech changes, and papilledema red flags.' : 'Screen for neurologic, cardiopulmonary, infectious, and metabolic red flags as appropriate.',
+          hasLowBp ? 'If BP remains low, evaluate for shock: repeat BP, pulse pressure, volume status, bleeding, sepsis signs, medication causes, arrhythmia, and need for urgent IV fluids/ED transfer.' : 'Trend vitals and compare against baseline if available.',
+          hasLowSpo2 ? 'Repeat SpO2 with good waveform; assess lungs, oxygen requirement, and need for urgent respiratory/cardiopulmonary workup.' : 'Confirm pulse oximetry if symptoms suggest respiratory compromise.',
         ],
         nextSteps:
           urgency === 'urgent'
-            ? ['Escalate for urgent medical evaluation now.']
+            ? ['Escalate to urgent/emergency evaluation now; do not manage as routine telehealth if red flags persist.']
             : urgency === 'warning'
-              ? ['Arrange same-day or soon clinical follow-up.']
-              : ['Provide routine guidance and return precautions.'],
+              ? ['Arrange same-day clinical review or close follow-up with clear escalation precautions.']
+              : ['Provide routine guidance, symptom monitoring, and return precautions.'],
       },
     };
+
+    const existing = summary.doctorAssessment;
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      return fallback;
+    }
+
+    const current = existing as Record<string, any>;
+    const currentActions = current.actionableRecommendations || {};
+    return {
+      chiefComplaint: current.chiefComplaint || fallback.chiefComplaint,
+      keyFindings: this.mergeStringArrays(current.keyFindings, fallback.keyFindings),
+      urgency: {
+        level: urgency,
+        justification: current.urgency?.justification && String(current.urgency.justification).length > 90
+          ? current.urgency.justification
+          : fallback.urgency.justification,
+      },
+      differentialDiagnosis: this.mergeDifferentials(current.differentialDiagnosis, fallback.differentialDiagnosis),
+      actionableRecommendations: {
+        keyQuestions: this.mergeStringArrays(currentActions.keyQuestions, fallback.actionableRecommendations.keyQuestions),
+        clinicalChecks: this.mergeStringArrays(currentActions.clinicalChecks, fallback.actionableRecommendations.clinicalChecks),
+        nextSteps: this.mergeStringArrays(currentActions.nextSteps, fallback.actionableRecommendations.nextSteps),
+      },
+    };
+  }
+
+  private buildUrgencyJustification(
+    urgency: 'normal' | 'warning' | 'urgent',
+    symptoms: string[],
+    abnormalVitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
+  ): string {
+    const criticalVitals = abnormalVitals.filter((v) => v.severity === 'critical');
+    const symptomText = symptoms.filter(Boolean).join(', ');
+    const vitalText = criticalVitals.map((v) => `${v.vital} ${v.value}`).join(', ');
+
+    if (urgency === 'urgent') {
+      const triggers = [symptomText, vitalText].filter(Boolean).join('; ');
+      return `Urgent because the patient has red-flag features (${triggers || 'reported symptoms/abnormal vitals'}) that could represent an acute cardiopulmonary, neurologic, shock, or metabolic process and require immediate assessment.`;
+    }
+    if (urgency === 'warning') {
+      const warningVitals = abnormalVitals.map((v) => `${v.vital} ${v.value}`).join(', ');
+      return `Warning because symptoms${warningVitals ? ` and abnormal vitals (${warningVitals})` : ''} need timely clinical review and monitoring for progression.`;
+    }
+    return 'Routine urgency because no immediate red flags are identified from the submitted symptoms and vitals, but symptoms should still be monitored.';
+  }
+
+  private mergeStringArrays(primary: unknown, fallback: unknown): string[] {
+    const fromPrimary = Array.isArray(primary) ? primary.map(String) : [];
+    const fromFallback = Array.isArray(fallback) ? fallback.map(String) : [];
+    const cleaned = [...fromPrimary, ...fromFallback]
+      .map((v) => v.trim())
+      .filter(Boolean);
+    return [...new Set(cleaned)].slice(0, 10);
+  }
+
+  private mergeDifferentials(primary: unknown, fallback: unknown): Array<Record<string, string>> {
+    const normalize = (items: unknown): Array<Record<string, string>> =>
+      Array.isArray(items)
+        ? items
+            .map((item) => {
+              if (!item || typeof item !== 'object') return null;
+              const obj = item as Record<string, unknown>;
+              const condition = String(obj.condition || '').trim();
+              const rationale = String(obj.rationale || '').trim();
+              if (!condition) return null;
+              return { condition, rationale };
+            })
+            .filter(Boolean) as Array<Record<string, string>>
+        : [];
+
+    const merged: Array<Record<string, string>> = [];
+    for (const item of [...normalize(primary), ...normalize(fallback)]) {
+      if (merged.some((existing) => existing.condition.toLowerCase() === item.condition.toLowerCase())) continue;
+      merged.push(item);
+      if (merged.length >= 3) break;
+    }
+    return merged;
   }
 
   private normalizeAssessmentSummary(
@@ -512,11 +714,13 @@ Output fields in this exact order:
     vitals: VitalsDto | undefined,
     symptomHints: string[],
   ): Record<string, unknown> {
-    const normalized = { ...summary };
+    const normalized: Record<string, unknown> = { ...summary, __vitals: vitals };
     const urgency = this.getUrgencyLevel(normalized, transcription);
     normalized.overallStatus = urgency;
     normalized.patientSummary = this.buildPatientSummary(normalized, transcription, symptomHints);
+    normalized.patientMessage = normalized.patientSummary;
     normalized.doctorAssessment = this.buildDoctorAssessmentFallback(normalized, transcription, vitals, symptomHints);
+    delete (normalized as any).__vitals;
 
     const doctor = normalized.doctorAssessment as Record<string, any>;
     const doctorUrgency = doctor.urgency && typeof doctor.urgency === 'object' ? doctor.urgency : {};
@@ -725,10 +929,12 @@ Output fields in this exact order:
     emit: StreamEmitter,
   ): Promise<{ summary: Record<string, unknown> }> {
     const ctx = this.buildClinicalContext(transcription, vitals);
-    const immediatePatientSummary = this.buildPatientSummary({}, transcription, ctx.symptomHints);
-    const immediateUrgency = this.getUrgencyLevel({}, transcription);
+    const immediateContext = { __vitals: vitals } as Record<string, unknown>;
+    const immediatePatientSummary = this.buildPatientSummary(immediateContext, transcription, ctx.symptomHints);
+    const immediateUrgency = this.getUrgencyLevel(immediateContext, transcription);
     await emit({
       type: 'patient_summary_ready',
+      patientMessage: immediatePatientSummary,
       patientSummary: immediatePatientSummary,
       urgencyLevel: immediateUrgency,
     });
@@ -749,13 +955,18 @@ Output fields in this exact order:
 
     normalizedSummary.clinicalSummary = finalClinical;
     normalizedSummary.patientSummary = finalPatientSummary;
+    normalizedSummary.patientMessage = finalPatientSummary;
     normalizedSummary.doctorAssessment = doctorAssessment;
 
-    await emit({
-      type: 'patient_summary_ready',
-      patientSummary: finalPatientSummary,
-      urgencyLevel,
-    });
+    const normalizeStreamText = (value: string) => value.replace(/\s+/g, ' ').trim();
+    if (normalizeStreamText(finalPatientSummary) !== normalizeStreamText(immediatePatientSummary) || urgencyLevel !== immediateUrgency) {
+      await emit({
+        type: 'patient_summary_ready',
+        patientMessage: finalPatientSummary,
+        patientSummary: finalPatientSummary,
+        urgencyLevel,
+      });
+    }
     await emit({ type: 'clinical_summary_ready', clinicalSummary: finalClinical });
     await emit({ type: 'doctor_assessment_ready', doctorAssessment });
     await emit({
@@ -807,7 +1018,7 @@ Output fields in this exact order:
     let fullText = '';
     let clinicalSummary = '';
 
-    for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 850, 0.45)) {
+    for await (const delta of this.streamOpenAIChat(systemPrompt, userPrompt, 1100, 0.35)) {
       fullText += delta;
 
       const nextClinical = this.extractClinicalSummaryFromPartialJson(fullText);
@@ -992,7 +1203,13 @@ Output fields in this exact order:
 
       const summary = await this.generateHealthSummary(record.transcription, vitals);
       const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
-      const audioUrl = await this.saveSpeechToFile(clinicalText);
+      const patientText =
+        typeof summary.patientMessage === 'string'
+          ? summary.patientMessage
+          : typeof summary.patientSummary === 'string'
+            ? summary.patientSummary
+            : clinicalText;
+      const audioUrl = await this.saveSpeechToFile(patientText);
 
       const generatedAt = new Date().toISOString();
       const data: any = await this.cloudinaryService.uploadFile(audioUrl);
@@ -1061,7 +1278,13 @@ Output fields in this exact order:
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
     const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
-    const patientSummary = typeof summary.patientSummary === 'string' ? summary.patientSummary : clinicalSummary;
+    const patientMessage =
+      typeof summary.patientMessage === 'string'
+        ? summary.patientMessage
+        : typeof summary.patientSummary === 'string'
+          ? summary.patientSummary
+          : clinicalSummary;
+    const patientSummary = patientMessage;
     const doctorAssessment =
       summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
         ? (summary.doctorAssessment as Record<string, unknown>)
@@ -1076,6 +1299,7 @@ Output fields in this exact order:
       voiceId,
       transcription: record.transcription,
       summary,
+      patientMessage,
       patientSummary,
       clinicalSummary,
       doctorAssessment,
@@ -1087,6 +1311,7 @@ Output fields in this exact order:
         voiceId,
         transcription: record.transcription,
         summary,
+        patientMessage,
         patientSummary,
         clinicalSummary,
         doctorAssessment,
@@ -1167,7 +1392,13 @@ Output fields in this exact order:
     const createdAt = new Date().toISOString();
     const summary: any = await this.generateHealthSummary(transcription, vitals);
     const clinicalText = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
-    const audioUrl = await this.saveSpeechToFile(clinicalText);
+    const patientText =
+      typeof summary.patientMessage === 'string'
+        ? summary.patientMessage
+        : typeof summary.patientSummary === 'string'
+          ? summary.patientSummary
+          : clinicalText;
+    const audioUrl = await this.saveSpeechToFile(patientText);
     const data: any = await this.cloudinaryService.uploadFile(audioUrl);
     summary.audioUrl = data?.name;
 
@@ -1235,7 +1466,13 @@ Output fields in this exact order:
     await emit({ type: 'progress', stage: 'text_summary_saved', elapsedMs: Date.now() - startedAt });
 
     const clinicalSummary = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
-    const patientSummary = typeof summary.patientSummary === 'string' ? summary.patientSummary : clinicalSummary;
+    const patientMessage =
+      typeof summary.patientMessage === 'string'
+        ? summary.patientMessage
+        : typeof summary.patientSummary === 'string'
+          ? summary.patientSummary
+          : clinicalSummary;
+    const patientSummary = patientMessage;
     const doctorAssessment =
       summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
         ? (summary.doctorAssessment as Record<string, unknown>)
@@ -1250,6 +1487,7 @@ Output fields in this exact order:
       voiceId: createVoice._id.toString(),
       transcription,
       summary,
+      patientMessage,
       patientSummary,
       clinicalSummary,
       doctorAssessment,
@@ -1261,6 +1499,7 @@ Output fields in this exact order:
         voiceId: createVoice._id.toString(),
         transcription,
         summary,
+        patientMessage,
         patientSummary,
         clinicalSummary,
         doctorAssessment,
