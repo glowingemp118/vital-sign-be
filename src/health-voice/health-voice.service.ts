@@ -504,21 +504,23 @@ Output fields in this exact order:
       ? symptoms
       : 'the symptoms you described';
     const vitals = (summary as any).__vitals as VitalsDto | undefined;
+    const abnormalVitals = this.getAbnormalVitalFindings(vitals);
     const criticalVitals = this.getAbnormalVitalFindings(vitals).filter((v) => v.severity === 'critical');
-    const criticalText = criticalVitals.length
-      ? ` ${this.formatPatientVitalWarning(criticalVitals)}`
+    const criticalReason = criticalVitals.length
+      ? ` ${this.formatPatientVitalReason(criticalVitals)}`
+      : '';
+    const warningReason = abnormalVitals.length
+      ? ` ${this.formatPatientVitalReason(abnormalVitals)}`
       : '';
 
     if (urgency === 'urgent') {
-      return `This could be an emergency. You reported ${symptomText}.${criticalText} Please seek urgent medical care now or call emergency services immediately, especially if symptoms are new, severe, or worsening.`;
+      return `This could be an emergency. You reported ${symptomText}.${criticalReason} These signs can point to a serious heart, breathing, brain, circulation, or sugar-related problem, so waiting at home may not be safe. Please call emergency services or go to urgent/emergency care now; do not drive yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe.`;
     }
     if (urgency === 'warning') {
-      return `Your symptoms need medical attention soon: ${symptomText}. Please contact your doctor today, and seek urgent help if pain, breathing, dizziness, weakness, or confusion develops or worsens.`;
+      return `Your symptoms need medical attention soon: ${symptomText}.${warningReason} This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need treatment. Please contact your doctor today, recheck your vitals if you can, and seek urgent help immediately if pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop.`;
     }
 
-    const existing = typeof summary.patientSummary === 'string' ? summary.patientSummary.trim() : '';
-    if (existing && !this.isDismissiveClinicalText(existing)) return existing;
-    return `Your readings do not show an obvious emergency right now. Keep monitoring your symptoms and contact your doctor if they persist, worsen, or feel unusual for you.`;
+    return `This does not show an obvious emergency right now based on the symptoms and vitals provided. The main reason is that no critical red flags were detected, but your symptoms still matter and can change over time. Keep monitoring how you feel, recheck your vitals if available, and contact your doctor if symptoms persist, worsen, or feel unusual for you.`;
   }
 
   private formatPatientSymptoms(symptomHints: string[]): string {
@@ -532,21 +534,35 @@ Output fields in this exact order:
     return `${symptoms.slice(0, -1).join(', ')} and ${symptoms[symptoms.length - 1]}`;
   }
 
-  private formatPatientVitalWarning(
-    criticalVitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
+  private formatPatientVitalReason(
+    vitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
   ): string {
-    const parts = criticalVitals.map((v) => {
-      if (v.vital === 'Blood Pressure') return `your blood pressure is very low (${v.value})`;
-      if (v.vital === 'SpO2') return `your oxygen level is low (${v.value})`;
-      if (v.vital === 'Heart Rate') return `your heart rate is abnormal (${v.value})`;
-      if (v.vital === 'Glucose') return `your glucose is critically abnormal (${v.value})`;
+    const parts = vitals.map((v) => {
+      if (v.vital === 'Blood Pressure' && v.severity === 'critical') {
+        return `your blood pressure is very low (${v.value}), which can mean your body may not be getting enough blood flow`;
+      }
+      if (v.vital === 'Blood Pressure') {
+        return `your blood pressure is elevated (${v.value}), which should be rechecked`;
+      }
+      if (v.vital === 'SpO2') {
+        return `your oxygen level is low (${v.value}), which can mean your body is not getting enough oxygen`;
+      }
+      if (v.vital === 'Heart Rate') {
+        return `your heart rate is abnormal (${v.value}), which should be interpreted with your symptoms`;
+      }
+      if (v.vital === 'Glucose' && v.severity === 'critical') {
+        return `your glucose is critically abnormal (${v.value}), which can affect alertness and body function`;
+      }
+      if (v.vital === 'Glucose') {
+        return `your glucose is abnormal (${v.value}), which may need correction or review`;
+      }
       return `your ${v.vital.toLowerCase()} is abnormal (${v.value})`;
     });
 
     if (parts.length === 1) {
-      return `${parts[0]}, which is a red flag.`;
+      return `One important reason is that ${parts[0]}.`;
     }
-    return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}, which are red flags.`;
+    return `The main reasons are that ${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}.`;
   }
 
   private buildDoctorAssessmentFallback(
