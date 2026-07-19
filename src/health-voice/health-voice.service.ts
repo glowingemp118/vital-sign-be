@@ -499,45 +499,93 @@ Output fields in this exact order:
     symptomHints: string[],
   ): string {
     const urgency = this.getUrgencyLevel(summary, transcription);
-    const symptoms = this.formatPatientSymptoms(symptomHints);
-    const symptomText = symptoms
-      ? symptoms
-      : 'the symptoms you described';
     const vitals = (summary as any).__vitals as VitalsDto | undefined;
     const abnormalVitals = this.getAbnormalVitalFindings(vitals);
     const criticalVitals = this.getAbnormalVitalFindings(vitals).filter((v) => v.severity === 'critical');
-    const criticalReason = criticalVitals.length
-      ? ` ${this.formatPatientVitalReason(criticalVitals)}`
-      : '';
-    const warningReason = abnormalVitals.length
-      ? ` ${this.formatPatientVitalReason(abnormalVitals)}`
-      : '';
+    const reportedItems = this.formatPatientReportedItems(
+      symptomHints,
+      urgency === 'urgent' ? criticalVitals : abnormalVitals,
+    );
+    const disclaimer =
+      'This is an AI-generated summary. It is not a medical diagnosis, treatment recommendation, or substitute for professional medical care. Consider consulting a qualified healthcare provider for personalized advice.';
 
     if (urgency === 'urgent') {
       return [
-        `This may indicate a potentially serious situation. You reported ${symptomText}.${criticalReason}`,
-        'These signs can be associated with serious issues involving the heart, breathing, brain, circulation, or blood sugar levels. Because of that, it may not be safe to remain at home without medical evaluation.',
-        'Based on these symptoms and vitals, speaking with a medical professional as soon as possible may be advisable. If symptoms worsen, calling emergency services is one option to consider.',
-        'It may also be prudent to arrange transportation to a medical facility rather than driving yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe.',
-        'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+        'This may indicate a potentially serious situation.',
+        `You reported:\n\n${reportedItems}`,
+        'What this could mean:\n\nYour body may not be receiving enough blood flow or oxygen, or there may be stress on the heart, brain, circulation, breathing, or blood sugar systems. These signs can be associated with serious medical issues.',
+        [
+          'What to consider:',
+          '',
+          '• Remaining at home without medical evaluation may carry risks.',
+          '• Speaking with a medical professional as soon as possible may be advisable.',
+          '• If symptoms worsen, calling emergency services could be an option to consider.',
+          '• If you feel weak, dizzy, short of breath, confused, or the pain is severe, arranging transportation rather than driving yourself may be prudent.',
+        ].join('\n'),
+        disclaimer,
       ].join('\n\n');
     }
     if (urgency === 'warning') {
       return [
-        `Your symptoms may need medical attention soon: ${symptomText}.${warningReason}`,
-        'This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review.',
-        'Speaking with a medical professional today may be advisable. Rechecking your vitals if available may also help.',
-        'If pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop, considering urgent medical evaluation or emergency services may be appropriate.',
-        'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+        'This may need medical attention soon.',
+        `You reported:\n\n${reportedItems}`,
+        'What this could mean:\n\nThis does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review.',
+        [
+          'What to consider:',
+          '',
+          '• Speaking with a medical professional today may be advisable.',
+          '• Rechecking your vitals if available may help.',
+          '• If pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop, considering urgent medical evaluation or emergency services may be appropriate.',
+        ].join('\n'),
+        disclaimer,
       ].join('\n\n');
     }
 
     return [
       'This does not show an obvious emergency right now based on the symptoms and vitals provided.',
-      'The main reason is that no critical red flags were detected. Still, symptoms can change over time, and your personal medical history matters.',
-      'Continuing to monitor how you feel and rechecking your vitals if available may be reasonable. If symptoms persist, worsen, or feel unusual for you, consider speaking with a medical professional.',
-      'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+      `You reported:\n\n${reportedItems}`,
+      'What this could mean:\n\nNo critical red flags were detected from the information provided. Still, symptoms can change over time, and your personal medical history matters.',
+      [
+        'What to consider:',
+        '',
+        '• Continuing to monitor how you feel may be reasonable.',
+        '• Rechecking your vitals if available may help.',
+        '• If symptoms persist, worsen, or feel unusual for you, consider speaking with a medical professional.',
+      ].join('\n'),
+      disclaimer,
     ].join('\n\n');
+  }
+
+  private formatPatientReportedItems(
+    symptomHints: string[],
+    vitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
+  ): string {
+    const symptoms = [...new Set(symptomHints.filter(Boolean))];
+    if (symptoms.includes('severe headache')) {
+      const index = symptoms.indexOf('headache');
+      if (index >= 0) symptoms.splice(index, 1);
+    }
+
+    const symptomBullets = symptoms.map((symptom) => `• ${this.toPatientLabel(symptom)}`);
+    const vitalBullets = vitals.map((vital) => `• ${this.formatPatientVitalBullet(vital)}`);
+    const bullets = [...symptomBullets, ...vitalBullets];
+    return bullets.length > 0 ? bullets.join('\n') : '• No specific symptoms or critical vital signs were provided.';
+  }
+
+  private toPatientLabel(value: string): string {
+    return value
+      .split(' ')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private formatPatientVitalBullet(vital: { vital: string; value: string; severity: 'warning' | 'critical'; finding: string }): string {
+    if (vital.vital === 'Blood Pressure' && vital.severity === 'critical') return `Blood pressure very low (${vital.value})`;
+    if (vital.vital === 'Blood Pressure') return `Blood pressure elevated (${vital.value})`;
+    if (vital.vital === 'SpO2') return `Oxygen level low (${vital.value})`;
+    if (vital.vital === 'Heart Rate') return `Heart rate abnormal (${vital.value})`;
+    if (vital.vital === 'Glucose') return `Glucose abnormal (${vital.value})`;
+    return `${vital.vital} abnormal (${vital.value})`;
   }
 
   private formatPatientSymptoms(symptomHints: string[]): string {
