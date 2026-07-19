@@ -238,7 +238,7 @@ ${hasUrgentSymptoms ? 'URGENT SYMPTOM FLAG: Patient reported potentially serious
 3. Vitals are supporting data only. Normal HR or SpO2 does NOT mean the patient is fine.
 4. Always explain how reported symptoms and vitals fit together (e.g. "chest pain with HR 70 and SpO2 98% — vitals alone do not exclude cardiac causes").
 5. Chest pain, severe headache, breathing difficulty, fainting, stroke-like symptoms, very low BP, SpO2 below 92%, extreme heart rate, or critically abnormal glucose → overallStatus must be "urgent".
-6. For urgent cases, the patient message must be unmistakable: say this may be serious and advise urgent care/emergency help now.
+6. For urgent cases, the patient message must be unmistakable but guidance-based: say this may be serious and that speaking with a medical professional as soon as possible may be advisable.
 7. Doctor content must be clinical and specific: explain why each differential is plausible, name red flags, and list concrete checks/tests/questions — not generic "follow up" advice.`;
 
   private buildSummaryPrompts(transcription: string, vitals?: VitalsDto) {
@@ -317,7 +317,7 @@ STYLE:
 Output fields in this exact order:
 
 {
-  "patientSummary"   : "2-3 short direct sentences for the patient. Plain language. In urgent cases clearly say urgent medical care is needed now.",
+  "patientSummary"   : "Plain-language patient guidance. Explain why the situation may or may not be serious, mention critical vitals, and use guidance wording such as may be advisable or consider speaking with. Do not give direct medical orders.",
   "clinicalSummary"  : "1-2 concise doctor-facing sentences only.",
   "doctorAssessment" : {
     "chiefComplaint": "short phrase naming the main complaint in patient words",
@@ -363,7 +363,7 @@ Output fields in this exact order:
       summary.overallStatus = 'urgent';
       if (!summary.urgentAlert) {
         summary.urgentAlert =
-          'Chest pain or breathing difficulty reported — seek emergency medical care immediately. Normal vitals do not rule out a serious cause.';
+          'Chest pain or breathing difficulty reported — speaking with a medical professional as soon as possible may be advisable. Normal vitals do not rule out a serious cause.';
       }
     } else if (hasSevereHeadache && summary.overallStatus === 'normal') {
       summary.overallStatus = 'warning';
@@ -377,7 +377,7 @@ Output fields in this exact order:
     const clinical = typeof summary.clinicalSummary === 'string' ? summary.clinicalSummary : '';
     if (clinical && this.isDismissiveClinicalText(clinical) && symptomHints.length > 0) {
       const symptomList = symptomHints.join(' and ');
-      summary.clinicalSummary = `The patient is presenting with ${symptomList}. These reported symptoms require clinical attention and should not be dismissed because some vitals appear within normal limits. Please seek medical evaluation promptly, especially for chest pain or severe headache.`;
+      summary.clinicalSummary = `The patient is presenting with ${symptomList}. These reported symptoms require clinical attention and should not be dismissed because some vitals appear within normal limits. Medical evaluation may be advisable, especially for chest pain or severe headache.`;
       summary.overallStatus = hasChestPain ? 'urgent' : 'warning';
     }
 
@@ -514,13 +514,13 @@ Output fields in this exact order:
       : '';
 
     if (urgency === 'urgent') {
-      return `This could be an emergency. You reported ${symptomText}.${criticalReason} These signs can point to a serious heart, breathing, brain, circulation, or sugar-related problem, so waiting at home may not be safe. Please call emergency services or go to urgent/emergency care now; do not drive yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe.`;
+      return `This may indicate a potentially serious situation. You reported ${symptomText}.${criticalReason} These signs can be associated with serious issues involving the heart, breathing, brain, circulation, or blood sugar levels, so it may not be safe to remain at home without medical evaluation. Based on these symptoms and vitals, speaking with a medical professional as soon as possible may be advisable. If symptoms worsen, calling emergency services is one option to consider. It may also be prudent to arrange transportation to a medical facility rather than driving yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
     }
     if (urgency === 'warning') {
-      return `Your symptoms need medical attention soon: ${symptomText}.${warningReason} This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need treatment. Please contact your doctor today, recheck your vitals if you can, and seek urgent help immediately if pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop.`;
+      return `Your symptoms may need medical attention soon: ${symptomText}.${warningReason} This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review. Speaking with a medical professional today may be advisable, and rechecking your vitals if available may help. If pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop, considering urgent medical evaluation or emergency services may be appropriate. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
     }
 
-    return `This does not show an obvious emergency right now based on the symptoms and vitals provided. The main reason is that no critical red flags were detected, but your symptoms still matter and can change over time. Keep monitoring how you feel, recheck your vitals if available, and contact your doctor if symptoms persist, worsen, or feel unusual for you.`;
+    return `This does not show an obvious emergency right now based on the symptoms and vitals provided. The main reason is that no critical red flags were detected, but symptoms can change over time and your personal medical history still matters. Continuing to monitor how you feel and rechecking your vitals if available may be reasonable. If symptoms persist, worsen, or feel unusual for you, consider speaking with a medical professional. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
   }
 
   private formatPatientSymptoms(symptomHints: string[]): string {
@@ -1014,7 +1014,7 @@ Output fields in this exact order:
 
     const trimmed = fullText.trim();
     if (trimmed && this.isDismissiveClinicalText(trimmed) && ctx.symptomHints.length > 0) {
-      const fallback = `The patient is presenting with ${ctx.symptomHints.join(' and ')}. Although heart rate and oxygen levels may appear within normal limits, these symptoms still require medical attention — especially chest pain and severe headache. Please seek evaluation promptly.`;
+      const fallback = `The patient is presenting with ${ctx.symptomHints.join(' and ')}. Although heart rate and oxygen levels may appear within normal limits, these symptoms still require medical attention — especially chest pain and severe headache. Medical evaluation may be advisable.`;
       await emit({ type: 'summary_chunk', text: fallback, isCumulative: false });
       await emit({ type: 'clinical_summary_delta', delta: fallback, fullText: fallback });
       return fallback;
