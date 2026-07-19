@@ -514,13 +514,30 @@ Output fields in this exact order:
       : '';
 
     if (urgency === 'urgent') {
-      return `This may indicate a potentially serious situation. You reported ${symptomText}.${criticalReason} These signs can be associated with serious issues involving the heart, breathing, brain, circulation, or blood sugar levels, so it may not be safe to remain at home without medical evaluation. Based on these symptoms and vitals, speaking with a medical professional as soon as possible may be advisable. If symptoms worsen, calling emergency services is one option to consider. It may also be prudent to arrange transportation to a medical facility rather than driving yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
+      return [
+        `This may indicate a potentially serious situation. You reported ${symptomText}.${criticalReason}`,
+        'These signs can be associated with serious issues involving the heart, breathing, brain, circulation, or blood sugar levels. Because of that, it may not be safe to remain at home without medical evaluation.',
+        'Based on these symptoms and vitals, speaking with a medical professional as soon as possible may be advisable. If symptoms worsen, calling emergency services is one option to consider.',
+        'It may also be prudent to arrange transportation to a medical facility rather than driving yourself if you feel weak, dizzy, short of breath, confused, or the pain is severe.',
+        'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+      ].join('\n\n');
     }
     if (urgency === 'warning') {
-      return `Your symptoms may need medical attention soon: ${symptomText}.${warningReason} This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review. Speaking with a medical professional today may be advisable, and rechecking your vitals if available may help. If pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop, considering urgent medical evaluation or emergency services may be appropriate. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
+      return [
+        `Your symptoms may need medical attention soon: ${symptomText}.${warningReason}`,
+        'This does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review.',
+        'Speaking with a medical professional today may be advisable. Rechecking your vitals if available may also help.',
+        'If pain, breathing trouble, dizziness, weakness, confusion, fainting, or worsening symptoms develop, considering urgent medical evaluation or emergency services may be appropriate.',
+        'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+      ].join('\n\n');
     }
 
-    return `This does not show an obvious emergency right now based on the symptoms and vitals provided. The main reason is that no critical red flags were detected, but symptoms can change over time and your personal medical history still matters. Continuing to monitor how you feel and rechecking your vitals if available may be reasonable. If symptoms persist, worsen, or feel unusual for you, consider speaking with a medical professional. This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.`;
+    return [
+      'This does not show an obvious emergency right now based on the symptoms and vitals provided.',
+      'The main reason is that no critical red flags were detected. Still, symptoms can change over time, and your personal medical history matters.',
+      'Continuing to monitor how you feel and rechecking your vitals if available may be reasonable. If symptoms persist, worsen, or feel unusual for you, consider speaking with a medical professional.',
+      'This is an AI-generated summary based on the information you entered. It is not a medical diagnosis, treatment recommendation, or substitute for professional care. Consider consulting a qualified healthcare provider for personalized advice.',
+    ].join('\n\n');
   }
 
   private formatPatientSymptoms(symptomHints: string[]): string {
