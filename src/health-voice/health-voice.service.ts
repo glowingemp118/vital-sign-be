@@ -187,6 +187,12 @@ export class HealthVoiceService {
       [/strong headache|severe headache|bad headache/i, 'severe headache'],
       [/headache|head ache|migraine/i, 'headache'],
       [/shortness of breath|difficulty breathing|trouble breathing|can'?t breathe/i, 'breathing difficulty'],
+      [/sore throat|throat pain|pain in (?:my )?throat|scratchy throat/i, 'sore throat'],
+      [/difficulty swallowing|trouble swallowing|can'?t swallow|painful swallowing/i, 'difficulty swallowing'],
+      [/swollen lymph node|swollen gland|neck swelling/i, 'swollen lymph nodes'],
+      [/runny nose|stuffy nose|nasal congestion|congestion/i, 'nasal congestion'],
+      [/body ache|body pain|muscle ache|muscle pain/i, 'body aches'],
+      [/ear pain|earache/i, 'ear pain'],
       [/dizz(?:y|iness)/i, 'dizziness'],
       [/nausea|vomiting/i, 'nausea/vomiting'],
       [/fever|chills/i, 'fever/chills'],
@@ -195,6 +201,7 @@ export class HealthVoiceService {
       [/abdominal pain|stomach pain/i, 'abdominal pain'],
       [/back pain/i, 'back pain'],
       [/cough/i, 'cough'],
+      [/rash|skin redness|hives/i, 'rash'],
       [/faint(?:ing)?|passed out/i, 'fainting'],
     ];
 
@@ -502,8 +509,9 @@ Output fields in this exact order:
     const vitals = (summary as any).__vitals as VitalsDto | undefined;
     const abnormalVitals = this.getAbnormalVitalFindings(vitals);
     const criticalVitals = this.getAbnormalVitalFindings(vitals).filter((v) => v.severity === 'critical');
+    const patientSymptoms = this.collectPatientSymptoms(summary, symptomHints);
     const reportedItems = this.formatPatientReportedItems(
-      symptomHints,
+      patientSymptoms,
       urgency === 'urgent' ? criticalVitals : abnormalVitals,
     );
     const disclaimer =
@@ -527,7 +535,7 @@ Output fields in this exact order:
     }
     if (urgency === 'warning') {
       return [
-        'This may need medical attention soon.',
+        this.buildPatientWarningLead(patientSymptoms),
         `You reported:\n\n${reportedItems}`,
         'What this could mean:\n\nThis does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review.',
         [
@@ -556,15 +564,97 @@ Output fields in this exact order:
     ].join('\n\n');
   }
 
+  private collectPatientSymptoms(summary: Record<string, unknown>, symptomHints: string[]): string[] {
+    const symptoms = new Set<string>();
+    const addSymptoms = (items: unknown) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        const value = String(item || '').trim();
+        if (!value) continue;
+        const extracted = this.extractSymptomHints(value);
+        if (extracted.length > 0) {
+          for (const symptom of extracted) symptoms.add(symptom.toLowerCase());
+        } else {
+          symptoms.add(value.toLowerCase());
+        }
+      }
+    };
+
+    addSymptoms(symptomHints);
+    addSymptoms(summary.reportedSymptoms);
+
+    const doctor = summary.doctorAssessment;
+    if (doctor && typeof doctor === 'object' && !Array.isArray(doctor)) {
+      const chiefComplaint = String((doctor as Record<string, unknown>).chiefComplaint || '');
+      addSymptoms(this.extractSymptomHints(chiefComplaint));
+    }
+
+    return this.normalizePatientSymptoms([...symptoms]);
+  }
+
+  private normalizePatientSymptoms(symptoms: string[]): string[] {
+    const normalized = [...new Set(symptoms.map((s) => s.trim().toLowerCase()).filter(Boolean))];
+    if (normalized.includes('severe headache')) {
+      const index = normalized.indexOf('headache');
+      if (index >= 0) normalized.splice(index, 1);
+    }
+    return normalized;
+  }
+
+  private buildPatientWarningLead(symptoms: string[]): string {
+    const warningSigns = new Set<string>();
+
+    if (symptoms.includes('sore throat') || symptoms.includes('difficulty swallowing') || symptoms.includes('swollen lymph nodes')) {
+      warningSigns.add('fever');
+      warningSigns.add('difficulty swallowing');
+      warningSigns.add('swollen lymph nodes');
+      warningSigns.add('breathing trouble');
+    }
+    if (symptoms.includes('headache') || symptoms.includes('severe headache')) {
+      warningSigns.add('a severe or unusual headache');
+      warningSigns.add('vision changes');
+      warningSigns.add('weakness');
+      warningSigns.add('confusion');
+    }
+    if (symptoms.includes('cough') || symptoms.includes('breathing difficulty')) {
+      warningSigns.add('breathing trouble');
+      warningSigns.add('chest pain');
+      warningSigns.add('fever');
+      warningSigns.add('low oxygen readings');
+    }
+    if (symptoms.includes('abdominal pain') || symptoms.includes('nausea/vomiting')) {
+      warningSigns.add('worsening pain');
+      warningSigns.add('ongoing vomiting');
+      warningSigns.add('fever');
+      warningSigns.add('signs of dehydration');
+    }
+    if (symptoms.includes('dizziness') || symptoms.includes('fatigue') || symptoms.includes('fainting')) {
+      warningSigns.add('fainting');
+      warningSigns.add('confusion');
+      warningSigns.add('weakness');
+      warningSigns.add('symptoms that are getting worse');
+    }
+
+    if (warningSigns.size === 0) {
+      warningSigns.add('symptoms becoming severe');
+      warningSigns.add('new symptoms appearing');
+      warningSigns.add('abnormal readings');
+    }
+
+    return `This may need medical attention soon, especially if you develop ${this.formatPatientList([...warningSigns].slice(0, 6))}.`;
+  }
+
+  private formatPatientList(items: string[]): string {
+    if (items.length === 0) return '';
+    if (items.length === 1) return items[0];
+    return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
+  }
+
   private formatPatientReportedItems(
     symptomHints: string[],
     vitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
   ): string {
-    const symptoms = [...new Set(symptomHints.filter(Boolean))];
-    if (symptoms.includes('severe headache')) {
-      const index = symptoms.indexOf('headache');
-      if (index >= 0) symptoms.splice(index, 1);
-    }
+    const symptoms = this.normalizePatientSymptoms(symptomHints);
 
     const symptomBullets = symptoms.map((symptom) => `• ${this.toPatientLabel(symptom)}`);
     const vitalBullets = vitals.map((vital) => `• ${this.formatPatientVitalBullet(vital)}`);
