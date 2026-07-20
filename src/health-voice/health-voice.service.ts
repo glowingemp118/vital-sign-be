@@ -314,6 +314,7 @@ STYLE:
 - Be clinical, structured, concise, and direct.
 - Avoid long narrative paragraphs.
 - Do not soften serious cases. If red flags exist, state urgency plainly.
+- Keep symptoms and vital readings in separate fields: keyFindings for symptoms/red flags, keyReadings for abnormal/critical vitals.
 - Keep differentialDiagnosis to 2-3 most likely possibilities, each with a clinically meaningful rationale tied to symptoms/vitals/red flags.
 - Urgency justification must mention the specific trigger(s), e.g. chest pain, severe headache, hypotension, low SpO2, abnormal glucose.
 - Actionable recommendations must include concrete key questions, focused exam items, repeat measurements, and tests/checks to consider.
@@ -328,7 +329,8 @@ Output fields in this exact order:
   "clinicalSummary"  : "1-2 concise doctor-facing sentences only.",
   "doctorAssessment" : {
     "chiefComplaint": "short phrase naming the main complaint in patient words",
-    "keyFindings": ["abnormal vitals, reported symptoms, and red flags only"],
+    "keyFindings": ["reported symptoms and clinical red flags only — do not mix vital values here"],
+    "keyReadings": ["abnormal or critical vitals only, e.g. Blood pressure very low (60/30)"],
     "urgency": { "level": "normal | warning | urgent", "justification": "one short reason" },
     "differentialDiagnosis": [{ "condition": "string", "rationale": "specific rationale tied to this patient's symptoms/vitals" }],
     "actionableRecommendations": {
@@ -510,17 +512,17 @@ Output fields in this exact order:
     const abnormalVitals = this.getAbnormalVitalFindings(vitals);
     const criticalVitals = this.getAbnormalVitalFindings(vitals).filter((v) => v.severity === 'critical');
     const patientSymptoms = this.collectPatientSymptoms(summary, symptomHints);
-    const reportedItems = this.formatPatientReportedItems(
-      patientSymptoms,
-      urgency === 'urgent' ? criticalVitals : abnormalVitals,
-    );
+    const readingVitals = urgency === 'urgent' ? criticalVitals : abnormalVitals;
+    const reportedSection = this.formatPatientSymptomSection(patientSymptoms);
+    const readingsSection = this.formatPatientReadingsSection(readingVitals);
     const disclaimer =
       'This is an AI-generated summary. It is not a medical diagnosis, treatment recommendation, or substitute for professional medical care. Consider consulting a qualified healthcare provider for personalized advice.';
 
     if (urgency === 'urgent') {
       return [
         'This may indicate a potentially serious situation.',
-        `You reported:\n\n${reportedItems}`,
+        reportedSection,
+        ...(readingsSection ? [readingsSection] : []),
         'What this could mean:\n\nYour body may not be receiving enough blood flow or oxygen, or there may be stress on the heart, brain, circulation, breathing, or blood sugar systems. These signs can be associated with serious medical issues.',
         [
           'What to consider:',
@@ -536,7 +538,8 @@ Output fields in this exact order:
     if (urgency === 'warning') {
       return [
         this.buildPatientWarningLead(patientSymptoms),
-        `You reported:\n\n${reportedItems}`,
+        reportedSection,
+        ...(readingsSection ? [readingsSection] : []),
         'What this could mean:\n\nThis does not clearly look like an emergency from the information provided, but these symptoms or readings can worsen or may need professional review.',
         [
           'What to consider:',
@@ -551,7 +554,8 @@ Output fields in this exact order:
 
     return [
       'This does not show an obvious emergency right now based on the symptoms and vitals provided.',
-      `You reported:\n\n${reportedItems}`,
+      reportedSection,
+      ...(readingsSection ? [readingsSection] : []),
       'What this could mean:\n\nNo critical red flags were detected from the information provided. Still, symptoms can change over time, and your personal medical history matters.',
       [
         'What to consider:',
@@ -650,12 +654,28 @@ Output fields in this exact order:
     return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
   }
 
+  private formatPatientSymptomSection(symptomHints: string[]): string {
+    const symptoms = this.normalizePatientSymptoms(symptomHints);
+    const bullets =
+      symptoms.length > 0
+        ? symptoms.map((symptom) => `• ${this.toPatientLabel(symptom)}`).join('\n')
+        : '• No specific symptoms were provided.';
+    return `You reported:\n\n${bullets}`;
+  }
+
+  private formatPatientReadingsSection(
+    vitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
+  ): string {
+    if (!vitals.length) return '';
+    const bullets = vitals.map((vital) => `• ${this.formatPatientVitalBullet(vital)}`).join('\n');
+    return `Key readings:\n\n${bullets}`;
+  }
+
   private formatPatientReportedItems(
     symptomHints: string[],
     vitals: Array<{ vital: string; value: string; severity: 'warning' | 'critical'; finding: string }>,
   ): string {
     const symptoms = this.normalizePatientSymptoms(symptomHints);
-
     const symptomBullets = symptoms.map((symptom) => `• ${this.toPatientLabel(symptom)}`);
     const vitalBullets = vitals.map((vital) => `• ${this.formatPatientVitalBullet(vital)}`);
     const bullets = [...symptomBullets, ...vitalBullets];
@@ -728,16 +748,9 @@ Output fields in this exact order:
   ): Record<string, unknown> {
     const urgency = this.getUrgencyLevel(summary, transcription);
     const symptoms = symptomHints.length ? symptomHints : ['reported symptoms'];
-    const vitalText = this.buildVitalsText(vitals);
     const abnormalVitals = this.getAbnormalVitalFindings(vitals);
-    const keyFindings = [
-      `Chief symptoms: ${symptoms.join(', ')}`,
-      ...abnormalVitals.map((v) => v.finding),
-      ...vitalText
-        .split('\n')
-        .filter((line) => line.startsWith('- '))
-        .map((line) => line.slice(2)),
-    ];
+    const keyFindings = symptoms.map((symptom) => this.toPatientLabel(symptom));
+    const keyReadings = abnormalVitals.map((v) => this.formatPatientVitalBullet(v));
 
     const hasChestPain = /chest pain|pain in (?:my )?chest/i.test(transcription);
     const hasHeadache = /headache|migraine/i.test(transcription);
@@ -772,7 +785,8 @@ Output fields in this exact order:
 
     const fallback = {
       chiefComplaint: symptoms.join(', '),
-      keyFindings: [...new Set(keyFindings)].slice(0, 8),
+      keyFindings: keyFindings.length ? keyFindings : ['No specific symptoms reported'],
+      keyReadings: keyReadings.length ? keyReadings : ['No abnormal vital readings provided'],
       urgency: {
         level: urgency,
         justification: this.buildUrgencyJustification(urgency, symptoms, abnormalVitals),
@@ -810,7 +824,14 @@ Output fields in this exact order:
     const currentActions = current.actionableRecommendations || {};
     return {
       chiefComplaint: current.chiefComplaint || fallback.chiefComplaint,
-      keyFindings: this.mergeStringArrays(current.keyFindings, fallback.keyFindings),
+      keyFindings: this.mergeStringArrays(
+        this.filterDoctorSymptomFindings(current.keyFindings),
+        fallback.keyFindings,
+      ),
+      keyReadings: this.mergeStringArrays(
+        current.keyReadings || this.filterDoctorVitalFindings(current.keyFindings),
+        fallback.keyReadings,
+      ),
       urgency: {
         level: urgency,
         justification: current.urgency?.justification && String(current.urgency.justification).length > 90
@@ -824,6 +845,24 @@ Output fields in this exact order:
         nextSteps: this.mergeStringArrays(currentActions.nextSteps, fallback.actionableRecommendations.nextSteps),
       },
     };
+  }
+
+  private filterDoctorSymptomFindings(items: unknown): string[] {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map(String)
+      .filter((item) => !this.looksLikeVitalFinding(item));
+  }
+
+  private filterDoctorVitalFindings(items: unknown): string[] {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map(String)
+      .filter((item) => this.looksLikeVitalFinding(item));
+  }
+
+  private looksLikeVitalFinding(text: string): boolean {
+    return /blood pressure|heart rate|spo2|oxygen|glucose|bp\b|bpm|mg\/dl|%/i.test(text);
   }
 
   private buildUrgencyJustification(
