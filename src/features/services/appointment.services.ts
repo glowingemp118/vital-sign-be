@@ -270,6 +270,7 @@ export class AppointmentsService {
         obj.doctor = new mongoose.Types.ObjectId(dr || _id);
       }
       await this.updateExpiredAppointments(user, obj);
+      await this.updatePastConfirmedToCompleted(user, obj);
       if (status && status !== 'all') {
         obj.status = status;
       }
@@ -448,6 +449,16 @@ export class AppointmentsService {
         user: uid,
       });
       if (!appointment) throw new Error('Appointment not found');
+      await this.updatePastConfirmedToCompleted(req.user, {
+        _id: appointmentId,
+        user: uid,
+      });
+      const refreshed = await this.appointmentModel.findOne({
+        _id: appointmentId,
+        user: uid,
+      });
+      if (!refreshed) throw new Error('Appointment not found');
+      Object.assign(appointment, refreshed.toObject?.() ?? refreshed);
       if (appointment.status !== 'completed')
         throw new Error('Appointment not completed yet');
       // Check if the user has already reviewed the doctor
@@ -580,6 +591,42 @@ export class AppointmentsService {
         ],
       },
       { $set: { status: 'expired' } }, // Update the status to 'expired'
+    );
+  }
+
+  /** Confirmed appointments whose end time has passed → completed */
+  async updatePastConfirmedToCompleted(user: any, cond: any = {}) {
+    const userTimezone = user?.timezone || 'UTC';
+    const now = moment.tz(userTimezone);
+
+    const confirmed = await this.appointmentModel
+      .find({
+        ...cond,
+        status: 'confirmed',
+        date: { $lte: now.clone().endOf('day').toDate() },
+      })
+      .select('_id date endTime')
+      .lean();
+
+    const toComplete = confirmed
+      .filter((appointment) => {
+        const dateStr = moment
+          .tz(appointment.date, userTimezone)
+          .format('YYYY-MM-DD');
+        const endDateTime = moment.tz(
+          `${dateStr} ${appointment.endTime}`,
+          'YYYY-MM-DD HH:mm',
+          userTimezone,
+        );
+        return endDateTime.isValid() && now.isAfter(endDateTime);
+      })
+      .map((appointment) => appointment._id);
+
+    if (toComplete.length === 0) return;
+
+    await this.appointmentModel.updateMany(
+      { _id: { $in: toComplete } },
+      { $set: { status: 'completed' } },
     );
   }
 
