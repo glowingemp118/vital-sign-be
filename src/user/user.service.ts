@@ -88,6 +88,18 @@ export class UserService {
         );
       }
 
+      if (phone?.trim()) {
+        const existingByPhone = await this.findUserByPhone(phone);
+        if (
+          existingByPhone &&
+          existingByPhone.status !== 'deleted' &&
+          (!isExistingUser ||
+            String(existingByPhone._id) !== String(isExistingUser._id))
+        ) {
+          throw new UnauthorizedException('Phone number already exists');
+        }
+      }
+
       password = await bcrypt.hash(password, 10);
       const isUser = user_type === UserType.User;
       const encryted_obj = processObject({ name, email, phone }, 'encrypt');
@@ -103,7 +115,9 @@ export class UserService {
         image: dto?.image || 'noimage.png',
         timezone: timezone || 'UTC',
         medicalConditions,
-        ...(isUser ? { ...encryted_obj, hashes: { ...hash_obj } } : {}),
+        // Always store phone hash so doctor/patient uniqueness can be checked across roles
+        hashes: { ...(isExistingUser?.hashes || {}), ...hash_obj },
+        ...(isUser ? { ...encryted_obj } : {}),
       };
       const user = isExistingUser
         ? Object.assign(isExistingUser, userData)
@@ -154,6 +168,17 @@ export class UserService {
     const hash_email = processValue(email, 'hash');
     const user = await this.userModel.findOne({
       $or: [{ 'hashes.email': hash_email }, { email: email }],
+    });
+    return user || null;
+  }
+
+  // Find a user by phone (plain doctor phone or hashed patient phone)
+  async findUserByPhone(phone: string): Promise<UserDocument | null> {
+    const normalized = String(phone || '').trim();
+    if (!normalized) return null;
+    const hash_phone = processValue(normalized, 'hash');
+    const user = await this.userModel.findOne({
+      $or: [{ 'hashes.phone': hash_phone }, { phone: normalized }],
     });
     return user || null;
   }
@@ -332,6 +357,23 @@ export class UserService {
   // Update a user's profile
   async updateProfile(id: string, updateUserDto: UpdateUserDto): Promise<any> {
     const { rc_uid, ...restUpdateUserDto } = updateUserDto;
+
+    if (restUpdateUserDto?.phone?.trim()) {
+      const existingByPhone = await this.findUserByPhone(restUpdateUserDto.phone);
+      if (
+        existingByPhone &&
+        existingByPhone.status !== 'deleted' &&
+        String(existingByPhone._id) !== String(id)
+      ) {
+        throw new UnauthorizedException('Phone number already exists');
+      }
+      const hash_phone = processValue(restUpdateUserDto.phone.trim(), 'hash');
+      (restUpdateUserDto as any).hashes = {
+        ...((await this.userModel.findById(id).select('hashes').lean())?.hashes ||
+          {}),
+        phone: hash_phone,
+      };
+    }
 
     const updateQuery: any = {
       $set: restUpdateUserDto,
