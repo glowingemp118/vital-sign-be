@@ -372,20 +372,20 @@ export class NotificationService {
     ];
 
     // Incoming-call FCM is Android-only (iOS killed→background uses VoIP PushKit).
-    // Prefer the *latest* Android FCM token — older ones often return
-    // messaging/registration-token-not-registered and can steal "fcmSent=1"
-    // while the current phone gets nothing.
-    const androidDevices = userDevices.devices.filter(
-      (d) =>
-        String(d.device_type || '').toLowerCase() === 'android' &&
-        d.device_id &&
-        d.device_id.trim().length > 50,
-    );
-    const latestAndroidToken =
-      androidDevices.length > 0
-        ? androidDevices[androidDevices.length - 1].device_id!.trim()
-        : null;
-    const androidFcmTokens = latestAndroidToken ? [latestAndroidToken] : [];
+    // Send to ALL registered Android tokens so multi-device accounts all ring.
+    // Stale tokens are pruned below when FCM returns not-registered.
+    const androidFcmTokens = [
+      ...new Set(
+        userDevices.devices
+          .filter(
+            (d) =>
+              String(d.device_type || '').toLowerCase() === 'android' &&
+              d.device_id &&
+              d.device_id.trim().length > 50,
+          )
+          .map((d) => d.device_id!.trim()),
+      ),
+    ];
 
     let voipSent = 0;
     for (const token of voipTokens) {
