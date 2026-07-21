@@ -638,15 +638,8 @@ export class UserService {
         });
       }
 
-      // Android FCM rotates often; drop other android device_id rows so call
-      // push doesn't hit a dead token and report fcmSent=1 for the wrong device.
-      if (device_id && device_type === 'android') {
-        devicesDoc.devices = devicesDoc.devices.filter(
-          (d: any) =>
-            String(d.device_type || '').toLowerCase() !== 'android' ||
-            d.device_id === device_id,
-        );
-      }
+      // Keep multiple Android devices so incoming calls can ring all logged-in phones.
+      // Stale FCM tokens are pruned when sendIncomingCallPush gets not-registered errors.
 
       await devicesDoc.save();
       const voipLen = voip_token?.length || 0;

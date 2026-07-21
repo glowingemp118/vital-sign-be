@@ -17,6 +17,7 @@ import { User } from 'src/user/schemas/user.schema';
 import { NotificationService } from 'src/notification/notification.service';
 import { processValue } from '../utils/encrptdecrpt';
 import { CallSessionService } from './call-session.service';
+import { UserType } from 'src/user/dto/user.dto';
 
 type CallType = 'audio' | 'video';
 
@@ -32,6 +33,8 @@ interface AnswerCallPayload {
   targetUserId: string;
   answer: any;
   callType?: CallType;
+  uuid?: string;
+  callUUID?: string;
 }
 
 interface IceCandidatePayload {
@@ -164,6 +167,65 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private isUserBusy(userId: string): boolean {
     return !!this.activeCallMap.get(String(userId));
+  }
+
+  /** Connected call OR ringing/pending session counts as busy */
+  private isInAnyCall(userId: string): boolean {
+    return (
+      this.isUserBusy(userId) ||
+      this.callSessionService.isUserInActiveCall(userId)
+    );
+  }
+
+  private async getCallRoleLabel(
+    userId: string,
+  ): Promise<'doctor' | 'patient'> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('user_type')
+      .lean();
+    return user?.user_type === UserType.Doctor ? 'doctor' : 'patient';
+  }
+
+  private async buildBusyPayload(
+    busyUserId: string,
+    callType: CallType,
+    reason: 'caller_busy' | 'callee_busy' | 'user_in_call' = 'user_in_call',
+  ) {
+    const role = await this.getCallRoleLabel(busyUserId);
+    const message =
+      reason === 'caller_busy'
+        ? 'You are already on another call'
+        : role === 'doctor'
+          ? 'The doctor is already on another call'
+          : 'The patient is already on another call';
+
+    return {
+      targetUserId: busyUserId,
+      reason,
+      role,
+      message,
+      callType,
+    };
+  }
+
+  private async emitToUserExcept(
+    userId: string,
+    exceptSocketId: string,
+    event: string,
+    payload: any,
+  ) {
+    const roomIds = await this.getRoomSocketIds(userId);
+    const memoryIds = this.getLiveSocketIds(userId);
+    const allIds = [...new Set([...roomIds, ...memoryIds])].filter(
+      (id) => id !== exceptSocketId,
+    );
+
+    for (const socketId of allIds) {
+      this.socketService.emitToSocket(socketId, event, payload);
+    }
+
+    return { emitted: allIds.length > 0, socketIds: allIds };
   }
 
   private getFullImageUrl(imageName: string | undefined): string {
@@ -420,13 +482,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const callType = this.normalizeCallType(payload.callType);
 
-    if (this.isUserBusy(callerId) || this.isUserBusy(calleeId)) {
-      console.log(`[Call] busy — caller=${callerId} callee=${calleeId}`);
-      this.socketService.emitToUser(callerId, 'callBusy', {
-        targetUserId: calleeId,
-        reason: 'user_in_call',
+    if (this.isInAnyCall(callerId)) {
+      const busy = await this.buildBusyPayload(
+        callerId,
         callType,
-      });
+        'caller_busy',
+      );
+      console.log(
+        `[Call] busy — caller already in call caller=${callerId} callee=${calleeId}`,
+      );
+      socket.emit('callBusy', busy);
+      return;
+    }
+
+    if (this.isInAnyCall(calleeId)) {
+      const busy = await this.buildBusyPayload(
+        calleeId,
+        callType,
+        'callee_busy',
+      );
+      console.log(
+        `[Call] busy — callee already in call caller=${callerId} callee=${calleeId} role=${busy.role}`,
+      );
+      socket.emit('callBusy', busy);
+      this.socketService.emitToUser(callerId, 'callBusy', busy);
       return;
     }
 
@@ -513,9 +592,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const calleeId = this.getSubjectId(socket);
     const callerId = String(payload.targetUserId);
     const callType = this.normalizeCallType(payload.callType);
+    const callUuid = payload.uuid || payload.callUUID;
 
     console.log(
-      `[Call] answerCall from=${calleeId} to=${callerId} callType=${callType}`,
+      `[Call] answerCall from=${calleeId} to=${callerId} callType=${callType} uuid=${callUuid || 'n/a'} socket=${socket.id}`,
     );
 
     if (!calleeId) {
@@ -523,12 +603,76 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    if (this.getPartner(callerId) || this.getPartner(calleeId)) {
+    const session = callUuid
+      ? this.callSessionService.get(String(callUuid))
+      : this.callSessionService.findActiveForPair(callerId, calleeId);
+
+    const alreadyPaired =
+      this.getPartner(calleeId) === callerId ||
+      this.getPartner(callerId) === calleeId;
+
+    // Same call already accepted on another device (WhatsApp-style)
+    if (session?.answered || alreadyPaired) {
+      console.log(
+        `[Call] answerCall blocked — already active elsewhere uuid=${session?.uuid || 'n/a'}`,
+      );
+      socket.emit('callAlreadyActive', {
+        uuid: session?.uuid || callUuid || null,
+        callerId,
+        callType,
+        message: 'This call is already active on another device',
+      });
+      return;
+    }
+
+    // Callee already in a different call
+    const calleePartner = this.getPartner(calleeId);
+    if (calleePartner && calleePartner !== callerId) {
+      const busy = await this.buildBusyPayload(
+        calleeId,
+        callType,
+        'caller_busy',
+      );
+      socket.emit('callBusy', busy);
+      return;
+    }
+
+    // Caller already in a different call
+    const callerPartner = this.getPartner(callerId);
+    if (callerPartner && callerPartner !== calleeId) {
+      const busy = await this.buildBusyPayload(
+        callerId,
+        callType,
+        'callee_busy',
+      );
+      socket.emit('callBusy', busy);
+      return;
+    }
+
+    // Ringing session exists for a different pair involving callee/caller
+    const calleeRinging = this.callSessionService.findActiveForUser(calleeId);
+    if (
+      calleeRinging &&
+      !(
+        calleeRinging.callerId === callerId &&
+        calleeRinging.calleeId === calleeId
+      )
+    ) {
+      const busy = await this.buildBusyPayload(
+        calleeId,
+        callType,
+        'caller_busy',
+      );
+      socket.emit('callBusy', busy);
       return;
     }
 
     this.setCallPair(callerId, calleeId);
-    this.callSessionService.markAnswered(callerId, calleeId);
+    const answeredSession = this.callSessionService.markAnswered(
+      callerId,
+      calleeId,
+      socket.id,
+    );
     this.clearDisconnectGrace(calleeId);
     this.clearDisconnectGrace(callerId);
 
@@ -537,18 +681,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       answer: payload.answer,
       calleeId,
       callType,
+      uuid: answeredSession?.uuid || callUuid || null,
       iceCandidates: iceForCaller.map((i) => ({
         candidate: i.candidate,
         fromUserId: i.fromUserId,
       })),
     });
 
-    socket
-      .to(this.socketService.getUserRoom(calleeId))
-      .emit('callAnsweredElsewhere', {
-        callerId,
-        callType,
-      });
+    // Stop ringing / dismiss CallKit UI on all other devices for this account
+    const elsewherePayload = {
+      uuid: answeredSession?.uuid || callUuid || null,
+      callerId,
+      callType,
+      message: 'Call answered on another device',
+    };
+    const { socketIds } = await this.emitToUserExcept(
+      calleeId,
+      socket.id,
+      'callAnsweredElsewhere',
+      elsewherePayload,
+    );
+    console.log(
+      `[Call] callAnsweredElsewhere → otherDevices=${socketIds.length} uuid=${elsewherePayload.uuid}`,
+    );
 
     // Deliver buffered ICE both ways (and keep copies peeked above for callers that apply from payload)
     const toCaller = this.callSessionService.drainIceFor(callerId);
@@ -605,7 +760,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('busyCall')
-  handleBusyCall(
+  async handleBusyCall(
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: CallActionPayload,
   ) {
@@ -615,15 +770,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     console.log(`[Call] busyCall from=${busyUserId} to=${callerId}`);
 
-    this.socketService.emitToUser(callerId, 'callBusy', {
-      targetUserId: busyUserId,
-      reason: 'user_in_call',
+    const busy = await this.buildBusyPayload(
+      busyUserId,
       callType,
-    });
+      'callee_busy',
+    );
+    this.socketService.emitToUser(callerId, 'callBusy', busy);
   }
 
   @SubscribeMessage('rejectCall')
-  handleRejectCall(
+  async handleRejectCall(
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: CallActionPayload,
   ) {
@@ -647,12 +803,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.callSessionService.deleteByPair(rejecterId, callerId);
 
-    socket
-      .to(this.socketService.getUserRoom(rejecterId))
-      .emit('callAnsweredElsewhere', {
-        callerId,
-        callType,
-      });
+    // Stop ringing on other devices of the same account
+    await this.emitToUserExcept(rejecterId, socket.id, 'callAnsweredElsewhere', {
+      callerId,
+      callType,
+      message: 'Call dismissed on another device',
+    });
   }
 
   @SubscribeMessage('endCall')

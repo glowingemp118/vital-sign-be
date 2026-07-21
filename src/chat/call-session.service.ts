@@ -19,6 +19,7 @@ export type PendingCall = {
   createdAt: number;
   expiresAt: number;
   answered: boolean;
+  answeredBySocketId?: string;
   /** ICE from either side while the peer was offline / not ready */
   pendingIce: BufferedIceCandidate[];
 };
@@ -77,12 +78,24 @@ export class CallSessionService {
     return this.get(uuid);
   }
 
-  markAnswered(callerId: string, calleeId: string): PendingCall | null {
+  markAnswered(
+    callerId: string,
+    calleeId: string,
+    answeredBySocketId?: string,
+  ): PendingCall | null {
     const session = this.findActiveForPair(callerId, calleeId);
     if (!session) return null;
     session.answered = true;
+    if (answeredBySocketId) {
+      session.answeredBySocketId = answeredBySocketId;
+    }
     session.expiresAt = Date.now() + this.POST_ANSWER_TTL_MS;
     return session;
+  }
+
+  /** True if user is in a ringing or answered call session */
+  isUserInActiveCall(userId: string): boolean {
+    return !!this.findActiveForUser(userId);
   }
 
   findActiveForCallee(calleeId: string): PendingCall | null {
