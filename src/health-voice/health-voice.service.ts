@@ -30,13 +30,13 @@ export type HealthStreamEvent =
   | { type: 'clinical_summary_delta'; delta: string; fullText: string }
   | { type: 'patient_summary_ready'; patientMessage: string; patientSummary: string; urgencyLevel: string }
   | { type: 'clinical_summary_ready'; clinicalSummary: string }
-  | { type: 'doctor_assessment_ready'; doctorAssessment: Record<string, unknown> }
+  | { type: 'doctor_assessment_ready'; doctorAssessment: Record<string, unknown>; keyFindings: string[]; keyReadings: string[] }
   | { type: 'recommendations_ready'; recommendations: unknown[] }
   | { type: 'audio_chunk'; index: number; text: string; audioBase64: string; format: 'mp3' }
   | { type: 'audio_start' }
   | { type: 'audio_ready'; audioUrl: string }
   | { type: 'summary_complete'; summary: Record<string, unknown> }
-  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; patientMessage: string; patientSummary: string; clinicalSummary: string; doctorAssessment: Record<string, unknown>; recommendations: unknown[]; urgencyLevel: string; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
+  | { type: 'done'; voiceId: string; transcription: string; summary: Record<string, unknown>; patientMessage: string; patientSummary: string; clinicalSummary: string; doctorAssessment: Record<string, unknown>; keyFindings: string[]; keyReadings: string[]; recommendations: unknown[]; urgencyLevel: string; generatedAt: string; audioUrl?: string; audioPending?: boolean; data?: Record<string, unknown> }
   | { type: 'error'; message: string };
 
 type StreamEmitter = (event: HealthStreamEvent) => void | Promise<void>;
@@ -314,7 +314,9 @@ STYLE:
 - Be clinical, structured, concise, and direct.
 - Avoid long narrative paragraphs.
 - Do not soften serious cases. If red flags exist, state urgency plainly.
-- Keep symptoms and vital readings in separate fields: keyFindings for symptoms/red flags, keyReadings for abnormal/critical vitals.
+- Keep symptoms and vital readings in separate fields: keyFindings for symptoms/red flags, keyReadings for EVERY submitted vital reading (abnormal or normal).
+- keyReadings must never be empty when vitals were provided. Example: ["Blood pressure 125/80", "Heart rate 83 bpm", "Oxygen level 97%"].
+- Do not put vital values inside keyFindings.
 - Keep differentialDiagnosis to 2-3 most likely possibilities, each with a clinically meaningful rationale tied to symptoms/vitals/red flags.
 - Urgency justification must mention the specific trigger(s), e.g. chest pain, severe headache, hypotension, low SpO2, abnormal glucose.
 - Actionable recommendations must include concrete key questions, focused exam items, repeat measurements, and tests/checks to consider.
@@ -330,7 +332,7 @@ Output fields in this exact order:
   "doctorAssessment" : {
     "chiefComplaint": "short phrase naming the main complaint in patient words",
     "keyFindings": ["reported symptoms and clinical red flags only — do not mix vital values here"],
-    "keyReadings": ["abnormal or critical vitals only, e.g. Blood pressure very low (60/30)"],
+    "keyReadings": ["every submitted vital reading, abnormal or normal, e.g. Blood pressure 125/80"],
     "urgency": { "level": "normal | warning | urgent", "justification": "one short reason" },
     "differentialDiagnosis": [{ "condition": "string", "rationale": "specific rationale tied to this patient's symptoms/vitals" }],
     "actionableRecommendations": {
@@ -785,6 +787,24 @@ Output fields in this exact order:
     return `The main reasons are that ${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}.`;
   }
 
+  private buildDoctorKeyReadings(vitals?: VitalsDto): string[] {
+    const abnormal = this.getAbnormalVitalFindings(vitals);
+    if (abnormal.length > 0) {
+      return abnormal.map((v) => this.formatPatientVitalBullet(v));
+    }
+    if (this.hasAnySubmittedVitals(vitals)) {
+      return this.buildSubmittedVitalBullets(vitals);
+    }
+    return ['No vital readings were provided'];
+  }
+
+  private buildDoctorKeyFindings(symptoms: string[]): string[] {
+    const unique = this.normalizePatientSymptoms(symptoms);
+    return unique.length
+      ? unique.map((symptom) => this.toPatientLabel(symptom))
+      : ['No specific symptoms reported'];
+  }
+
   private buildDoctorAssessmentFallback(
     summary: Record<string, unknown>,
     transcription: string,
@@ -792,15 +812,11 @@ Output fields in this exact order:
     symptomHints: string[],
   ): Record<string, unknown> {
     const urgency = this.getUrgencyLevel(summary, transcription);
-    const symptoms = symptomHints.length ? symptomHints : ['reported symptoms'];
+    const collected = this.collectPatientSymptoms(summary, symptomHints);
+    const symptoms = collected.length ? collected : symptomHints.length ? symptomHints : ['reported symptoms'];
     const abnormalVitals = this.getAbnormalVitalFindings(vitals);
-    const keyFindings = symptoms.map((symptom) => this.toPatientLabel(symptom));
-    const keyReadings =
-      abnormalVitals.length > 0
-        ? abnormalVitals.map((v) => this.formatPatientVitalBullet(v))
-        : this.hasAnySubmittedVitals(vitals)
-          ? this.buildSubmittedVitalBullets(vitals)
-          : ['No vital readings were provided'];
+    const keyFindings = this.buildDoctorKeyFindings(symptoms);
+    const keyReadings = this.buildDoctorKeyReadings(vitals);
 
     const hasChestPain = /chest pain|pain in (?:my )?chest/i.test(transcription);
     const hasHeadache = /headache|migraine/i.test(transcription);
@@ -834,8 +850,8 @@ Output fields in this exact order:
     }
 
     const fallback = {
-      chiefComplaint: symptoms.join(', '),
-      keyFindings: keyFindings.length ? keyFindings : ['No specific symptoms reported'],
+      chiefComplaint: this.buildDoctorKeyFindings(symptoms).join(', '),
+      keyFindings,
       keyReadings,
       urgency: {
         level: urgency,
@@ -874,15 +890,14 @@ Output fields in this exact order:
     const currentActions = current.actionableRecommendations || {};
     return {
       chiefComplaint: current.chiefComplaint || fallback.chiefComplaint,
-      keyFindings: this.mergeStringArrays(
-        this.filterDoctorSymptomFindings(current.keyFindings),
-        fallback.keyFindings,
+      keyFindings: this.buildDoctorKeyFindings(
+        this.mergeStringArrays(
+          this.filterDoctorSymptomFindings(current.keyFindings),
+          fallback.keyFindings,
+        ),
       ),
-      // Prefer backend-derived readings; AI often omits or empties keyReadings
-      keyReadings: this.mergeStringArrays(
-        fallback.keyReadings,
-        this.filterDoctorVitalFindings(current.keyReadings || current.keyFindings),
-      ),
+      // Always force backend vitals list — never trust AI to keep keyReadings
+      keyReadings: fallback.keyReadings,
       urgency: {
         level: urgency,
         justification: current.urgency?.justification && String(current.urgency.justification).length > 90
@@ -984,6 +999,11 @@ Output fields in this exact order:
     delete (normalized as any).__vitals;
 
     const doctor = normalized.doctorAssessment as Record<string, any>;
+    // Hard guarantee for doctor UI: always expose keyReadings + de-duped keyFindings
+    doctor.keyReadings = this.buildDoctorKeyReadings(vitals);
+    doctor.keyFindings = this.buildDoctorKeyFindings(
+      Array.isArray(doctor.keyFindings) ? doctor.keyFindings.map(String) : symptomHints,
+    );
     const doctorUrgency = doctor.urgency && typeof doctor.urgency === 'object' ? doctor.urgency : {};
     doctor.urgency = {
       ...doctorUrgency,
@@ -1229,7 +1249,18 @@ Output fields in this exact order:
       });
     }
     await emit({ type: 'clinical_summary_ready', clinicalSummary: finalClinical });
-    await emit({ type: 'doctor_assessment_ready', doctorAssessment });
+    const keyFindings = Array.isArray(doctorAssessment.keyFindings)
+      ? doctorAssessment.keyFindings.map(String)
+      : [];
+    const keyReadings = Array.isArray(doctorAssessment.keyReadings)
+      ? doctorAssessment.keyReadings.map(String)
+      : [];
+    await emit({
+      type: 'doctor_assessment_ready',
+      doctorAssessment,
+      keyFindings,
+      keyReadings,
+    });
     await emit({
       type: 'recommendations_ready',
       recommendations: Array.isArray(normalizedSummary.recommendations)
@@ -1550,6 +1581,18 @@ Output fields in this exact order:
       summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
         ? (summary.doctorAssessment as Record<string, unknown>)
         : {};
+    const keyFindings = Array.isArray(doctorAssessment.keyFindings)
+      ? (doctorAssessment.keyFindings as unknown[]).map(String)
+      : [];
+    const keyReadings = Array.isArray(doctorAssessment.keyReadings)
+      ? (doctorAssessment.keyReadings as unknown[]).map(String)
+      : this.buildDoctorKeyReadings(vitals);
+    // Final hard guarantee before emit/save
+    doctorAssessment.keyFindings = keyFindings.length
+      ? keyFindings
+      : this.buildDoctorKeyFindings([]);
+    doctorAssessment.keyReadings = keyReadings;
+    summary.doctorAssessment = doctorAssessment;
     const recommendations = Array.isArray(summary.recommendations)
       ? summary.recommendations
       : [];
@@ -1564,6 +1607,8 @@ Output fields in this exact order:
       patientSummary,
       clinicalSummary,
       doctorAssessment,
+      keyFindings: doctorAssessment.keyFindings as string[],
+      keyReadings: doctorAssessment.keyReadings as string[],
       recommendations,
       urgencyLevel,
       generatedAt,
@@ -1576,6 +1621,8 @@ Output fields in this exact order:
         patientSummary,
         clinicalSummary,
         doctorAssessment,
+        keyFindings: doctorAssessment.keyFindings,
+        keyReadings: doctorAssessment.keyReadings,
         recommendations,
         urgencyLevel,
         generatedAt,
@@ -1738,6 +1785,17 @@ Output fields in this exact order:
       summary.doctorAssessment && typeof summary.doctorAssessment === 'object'
         ? (summary.doctorAssessment as Record<string, unknown>)
         : {};
+    const keyFindings = Array.isArray(doctorAssessment.keyFindings)
+      ? (doctorAssessment.keyFindings as unknown[]).map(String)
+      : [];
+    const keyReadings = Array.isArray(doctorAssessment.keyReadings)
+      ? (doctorAssessment.keyReadings as unknown[]).map(String)
+      : this.buildDoctorKeyReadings(vitals);
+    doctorAssessment.keyFindings = keyFindings.length
+      ? keyFindings
+      : this.buildDoctorKeyFindings([]);
+    doctorAssessment.keyReadings = keyReadings;
+    summary.doctorAssessment = doctorAssessment;
     const recommendations = Array.isArray(summary.recommendations)
       ? summary.recommendations
       : [];
@@ -1752,6 +1810,8 @@ Output fields in this exact order:
       patientSummary,
       clinicalSummary,
       doctorAssessment,
+      keyFindings: doctorAssessment.keyFindings as string[],
+      keyReadings: doctorAssessment.keyReadings as string[],
       recommendations,
       urgencyLevel,
       generatedAt,
@@ -1764,6 +1824,8 @@ Output fields in this exact order:
         patientSummary,
         clinicalSummary,
         doctorAssessment,
+        keyFindings: doctorAssessment.keyFindings,
+        keyReadings: doctorAssessment.keyReadings,
         recommendations,
         urgencyLevel,
         generatedAt,
