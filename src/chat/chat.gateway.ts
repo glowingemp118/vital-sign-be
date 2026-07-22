@@ -228,6 +228,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { emitted: allIds.length > 0, socketIds: allIds };
   }
 
+  private emitCallConnectionError(
+    socket: Socket,
+    code: string,
+    detail: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    console.error(
+      `[Call] connection_error code=${code} socket=${socket.id} subject=${this.getSubjectId(socket) || 'n/a'} detail=${detail} extra=${JSON.stringify(extra)}`,
+    );
+    socket.emit('callConnectionError', {
+      code,
+      message: 'Connection error. Try again later.',
+      detail,
+      ...extra,
+    });
+    socket.emit('error', {
+      code,
+      message: 'Connection error. Try again later.',
+      detail,
+    });
+  }
+
   private getFullImageUrl(imageName: string | undefined): string {
     if (!imageName || imageName === 'noimage.png') return '';
     return `${process.env.IB_URL || ''}${imageName}`;
@@ -261,9 +283,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const objectId = socket.handshake.query.objectId as string | undefined;
 
     if (!subjectId || !Types.ObjectId.isValid(subjectId)) {
+      console.error(
+        `[Socket] connect REJECTED socketId=${socket.id} reason=invalid_subjectId subjectId=${subjectId || 'missing'} query=${JSON.stringify(socket.handshake.query)} authKeys=${Object.keys(socket.handshake.auth || {}).join(',')}`,
+      );
       socket.emit('error', {
+        code: 'INVALID_SUBJECT',
         message:
           'subjectId must be provided (query or auth) and must be a valid ObjectId.',
+      });
+      socket.emit('callConnectionError', {
+        code: 'INVALID_SUBJECT',
+        message: 'Connection error. Try again later.',
+        detail: 'Missing or invalid subjectId on socket connect',
       });
       socket.disconnect(true);
       return;
@@ -289,7 +320,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.log(
         `[Socket] connect subjectId=${subjectId} socketId=${socket.id} type=${
           objectId ? 'direct' : 'self'
-        }`,
+        } live=${this.getLiveSocketIds(subjectId).length}`,
       );
 
       // Mobile often reconnects AFTER FCM wake (live was 0 during callUser).
@@ -347,8 +378,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Cancel pending "callEnded from disconnect" if they came back in time
       this.clearDisconnectGrace(subjectId);
-    } catch (error) {
-      console.error(`[Socket] register failed subjectId=${subjectId}`, error);
+    } catch (error: any) {
+      console.error(
+        `[Socket] register FAILED subjectId=${subjectId} socketId=${socket.id} err=${error?.message || error}`,
+        error?.stack || error,
+      );
+      this.emitCallConnectionError(
+        socket,
+        'SOCKET_REGISTER_FAILED',
+        error?.message || 'Socket registration failed',
+        { subjectId },
+      );
     }
   }
 
@@ -456,131 +496,173 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: CallUserPayload,
   ) {
+    const startedAt = Date.now();
     const callerId = this.getSubjectId(socket);
     const calleeId = payload?.targetUserId
       ? String(payload.targetUserId).trim()
       : '';
 
     console.log(
-      `[Call] 1. callUser received — from=${callerId} to=${calleeId} callerSocket=${socket.id}`,
+      `[Call] 1. callUser received — from=${callerId} to=${calleeId} callerSocket=${socket.id} hasOffer=${!!payload?.offer} callType=${payload?.callType || 'audio'}`,
     );
 
-    if (!callerId) {
-      socket.emit('error', { message: 'Caller ID is required' });
-      return;
-    }
+    try {
+      if (!callerId) {
+        this.emitCallConnectionError(
+          socket,
+          'CALLER_ID_MISSING',
+          'Caller ID is required',
+        );
+        return;
+      }
 
-    if (!calleeId) {
-      socket.emit('error', { message: 'Target user ID is required' });
-      return;
-    }
+      if (!calleeId) {
+        this.emitCallConnectionError(
+          socket,
+          'CALLEE_ID_MISSING',
+          'Target user ID is required',
+          { callerId },
+        );
+        return;
+      }
 
-    if (!payload.offer) {
-      socket.emit('error', { message: 'WebRTC offer is required' });
-      return;
-    }
+      if (!payload.offer) {
+        this.emitCallConnectionError(
+          socket,
+          'OFFER_MISSING',
+          'WebRTC offer is required',
+          { callerId, calleeId },
+        );
+        return;
+      }
 
-    const callType = this.normalizeCallType(payload.callType);
+      const callType = this.normalizeCallType(payload.callType);
 
-    if (this.isInAnyCall(callerId)) {
-      const busy = await this.buildBusyPayload(
-        callerId,
-        callType,
-        'caller_busy',
+      if (this.isInAnyCall(callerId)) {
+        const busy = await this.buildBusyPayload(
+          callerId,
+          callType,
+          'caller_busy',
+        );
+        console.log(
+          `[Call] busy — caller already in call caller=${callerId} callee=${calleeId}`,
+        );
+        socket.emit('callBusy', busy);
+        return;
+      }
+
+      if (this.isInAnyCall(calleeId)) {
+        const busy = await this.buildBusyPayload(
+          calleeId,
+          callType,
+          'callee_busy',
+        );
+        console.log(
+          `[Call] busy — callee already in call caller=${callerId} callee=${calleeId} role=${busy.role}`,
+        );
+        socket.emit('callBusy', busy);
+        this.socketService.emitToUser(callerId, 'callBusy', busy);
+        return;
+      }
+
+      const liveIds = this.getLiveSocketIds(calleeId);
+      const roomIds = await this.getRoomSocketIds(calleeId);
+      const dbCount = await this.socketService.countUserSockets(calleeId);
+      const dbConnections = await this.socketService.getUserConnections(calleeId);
+      const dbSocketIds = dbConnections.map((c) => c.socketId);
+
+      console.log(
+        `[Call] 2. sockets for targetUserId=${calleeId} — live=${liveIds.length} room=${roomIds.length} db=${dbCount}`,
       );
       console.log(
-        `[Call] busy — caller already in call caller=${callerId} callee=${calleeId}`,
+        `[Call]    liveIds=[${liveIds.join(', ')}] roomIds=[${roomIds.join(', ')}] dbIds=[${dbSocketIds.join(', ')}]`,
       );
-      socket.emit('callBusy', busy);
-      return;
-    }
 
-    if (this.isInAnyCall(calleeId)) {
-      const busy = await this.buildBusyPayload(
+      const caller = await this.userModel
+        .findById(callerId)
+        .select('name image')
+        .lean();
+
+      if (caller) {
+        caller.name = processValue(caller?.name, 'decrypt');
+      }
+
+      const callerName = caller?.name || 'Unknown';
+      const callerAvatar = this.getFullImageUrl(caller?.image) || '';
+
+      // Store offer server-side (VoIP push must not carry full SDP)
+      // Prefer mobile-provided uuid/callUUID when valid (CallKit pairing)
+      const session = this.callSessionService.create({
+        callerId,
         calleeId,
         callType,
-        'callee_busy',
-      );
-      console.log(
-        `[Call] busy — callee already in call caller=${callerId} callee=${calleeId} role=${busy.role}`,
-      );
-      socket.emit('callBusy', busy);
-      this.socketService.emitToUser(callerId, 'callBusy', busy);
-      return;
-    }
+        offer: payload.offer,
+        callerName,
+        callerAvatar,
+        uuid: payload.uuid || payload.callUUID,
+      });
 
-    const liveIds = this.getLiveSocketIds(calleeId);
-    const roomIds = await this.getRoomSocketIds(calleeId);
-    const dbCount = await this.socketService.countUserSockets(calleeId);
-    const dbConnections = await this.socketService.getUserConnections(calleeId);
-    const dbSocketIds = dbConnections.map((c) => c.socketId);
-
-    console.log(
-      `[Call] 2. sockets for targetUserId=${calleeId} — live=${liveIds.length} room=${roomIds.length} db=${dbCount}`,
-    );
-    console.log(
-      `[Call]    liveIds=[${liveIds.join(', ')}] roomIds=[${roomIds.join(', ')}] dbIds=[${dbSocketIds.join(', ')}]`,
-    );
-
-    const caller = await this.userModel
-      .findById(callerId)
-      .select('name image')
-      .lean();
-
-    if (caller) {
-      caller.name = processValue(caller?.name, 'decrypt');
-    }
-
-    const callerName = caller?.name || 'Unknown';
-    const callerAvatar = this.getFullImageUrl(caller?.image) || '';
-
-    // Store offer server-side (VoIP push must not carry full SDP)
-    // Prefer mobile-provided uuid/callUUID when valid (CallKit pairing)
-    const session = this.callSessionService.create({
-      callerId,
-      calleeId,
-      callType,
-      offer: payload.offer,
-      callerName,
-      callerAvatar,
-      uuid: payload.uuid || payload.callUUID,
-    });
-
-    const incomingPayload = {
-      callerId,
-      callerName,
-      callerAvatar,
-      offer: payload.offer,
-      callType,
-      uuid: session.uuid,
-      callUUID: session.uuid,
-    };
-
-    const { emitted, socketIds } = await this.emitToUserLive(
-      calleeId,
-      'incomingCall',
-      incomingPayload,
-    );
-
-    console.log(
-      `[Call] 3. incomingCall emitted=${emitted ? 'yes' : 'no'} to=${calleeId} socketIds=[${socketIds.join(', ')}] callType=${callType} uuid=${session.uuid}`,
-    );
-
-    // Always push for reliability (iOS VoIP when killed + Android FCM)
-    try {
-      const pushResult = await this.notificationService.sendIncomingCallPush({
-        userId: calleeId,
-        uuid: session.uuid,
+      const incomingPayload = {
         callerId,
         callerName,
         callerAvatar,
+        offer: payload.offer,
         callType,
-      });
+        uuid: session.uuid,
+        callUUID: session.uuid,
+      };
+
+      const { emitted, socketIds } = await this.emitToUserLive(
+        calleeId,
+        'incomingCall',
+        incomingPayload,
+      );
+
       console.log(
-        `[Call] 4. push voipSent=${pushResult.voipSent} fcmSent=${pushResult.fcmSent} (voipTokens=${pushResult.voipTokens} fcmTokens=${pushResult.fcmTokens})`,
+        `[Call] 3. incomingCall emitted=${emitted ? 'yes' : 'no'} to=${calleeId} socketIds=[${socketIds.join(', ')}] callType=${callType} uuid=${session.uuid} elapsedMs=${Date.now() - startedAt}`,
+      );
+
+      // Always push for reliability (iOS VoIP when killed + Android FCM)
+      try {
+        const pushResult = await this.notificationService.sendIncomingCallPush({
+          userId: calleeId,
+          uuid: session.uuid,
+          callerId,
+          callerName,
+          callerAvatar,
+          callType,
+        });
+        console.log(
+          `[Call] 4. push voipSent=${pushResult.voipSent} fcmSent=${pushResult.fcmSent} (voipTokens=${pushResult.voipTokens} fcmTokens=${pushResult.fcmTokens}) elapsedMs=${Date.now() - startedAt}`,
+        );
+      } catch (err: any) {
+        console.error(
+          `[Call] push FAILED caller=${callerId} callee=${calleeId} uuid=${session.uuid} err=${err?.message || err}`,
+          err?.stack || err,
+        );
+        // Call can still proceed via socket — do not fail the whole callUser
+        socket.emit('callWarning', {
+          code: 'PUSH_FAILED',
+          message: 'Call started but push notification failed',
+          detail: err?.message || 'push failed',
+          uuid: session.uuid,
+        });
+      }
+
+      console.log(
+        `[Call] callUser DONE caller=${callerId} callee=${calleeId} uuid=${session.uuid} elapsedMs=${Date.now() - startedAt}`,
       );
     } catch (err: any) {
-      console.error('[Call] push failed:', err?.message || err);
+      console.error(
+        `[Call] callUser FAILED caller=${callerId} callee=${calleeId} socket=${socket.id} elapsedMs=${Date.now() - startedAt} err=${err?.message || err}`,
+        err?.stack || err,
+      );
+      this.emitCallConnectionError(
+        socket,
+        'CALL_USER_FAILED',
+        err?.message || 'Failed to start call',
+        { callerId, calleeId },
+      );
     }
   }
 
@@ -589,8 +671,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() payload: AnswerCallPayload,
   ) {
+    const startedAt = Date.now();
     const calleeId = this.getSubjectId(socket);
-    const callerId = String(payload.targetUserId);
+    const callerId = String(payload?.targetUserId || '');
     const callType = this.normalizeCallType(payload.callType);
     const callUuid = payload.uuid || payload.callUUID;
 
@@ -598,135 +681,152 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `[Call] answerCall from=${calleeId} to=${callerId} callType=${callType} uuid=${callUuid || 'n/a'} socket=${socket.id}`,
     );
 
-    if (!calleeId) {
-      socket.emit('error', { message: 'Callee ID is required' });
-      return;
-    }
+    try {
+      if (!calleeId) {
+        this.emitCallConnectionError(
+          socket,
+          'CALLEE_ID_MISSING',
+          'Callee ID is required',
+        );
+        return;
+      }
 
-    const session = callUuid
-      ? this.callSessionService.get(String(callUuid))
-      : this.callSessionService.findActiveForPair(callerId, calleeId);
+      const session = callUuid
+        ? this.callSessionService.get(String(callUuid))
+        : this.callSessionService.findActiveForPair(callerId, calleeId);
 
-    const alreadyPaired =
-      this.getPartner(calleeId) === callerId ||
-      this.getPartner(callerId) === calleeId;
+      const alreadyPaired =
+        this.getPartner(calleeId) === callerId ||
+        this.getPartner(callerId) === calleeId;
 
-    // Same call already accepted on another device (WhatsApp-style)
-    if (session?.answered || alreadyPaired) {
+      // Same call already accepted on another device (WhatsApp-style)
+      if (session?.answered || alreadyPaired) {
+        console.log(
+          `[Call] answerCall blocked — already active elsewhere uuid=${session?.uuid || 'n/a'}`,
+        );
+        socket.emit('callAlreadyActive', {
+          uuid: session?.uuid || callUuid || null,
+          callerId,
+          callType,
+          message: 'This call is already active on another device',
+        });
+        return;
+      }
+
+      // Callee already in a different call
+      const calleePartner = this.getPartner(calleeId);
+      if (calleePartner && calleePartner !== callerId) {
+        const busy = await this.buildBusyPayload(
+          calleeId,
+          callType,
+          'caller_busy',
+        );
+        socket.emit('callBusy', busy);
+        return;
+      }
+
+      // Caller already in a different call
+      const callerPartner = this.getPartner(callerId);
+      if (callerPartner && callerPartner !== calleeId) {
+        const busy = await this.buildBusyPayload(
+          callerId,
+          callType,
+          'callee_busy',
+        );
+        socket.emit('callBusy', busy);
+        return;
+      }
+
+      // Ringing session exists for a different pair involving callee/caller
+      const calleeRinging = this.callSessionService.findActiveForUser(calleeId);
+      if (
+        calleeRinging &&
+        !(
+          calleeRinging.callerId === callerId &&
+          calleeRinging.calleeId === calleeId
+        )
+      ) {
+        const busy = await this.buildBusyPayload(
+          calleeId,
+          callType,
+          'caller_busy',
+        );
+        socket.emit('callBusy', busy);
+        return;
+      }
+
+      this.setCallPair(callerId, calleeId);
+      const answeredSession = this.callSessionService.markAnswered(
+        callerId,
+        calleeId,
+        socket.id,
+      );
+      this.clearDisconnectGrace(calleeId);
+      this.clearDisconnectGrace(callerId);
+
+      const iceForCaller = this.callSessionService.peekIceFor(callerId);
+      this.socketService.emitToUser(callerId, 'callAnswered', {
+        answer: payload.answer,
+        calleeId,
+        callType,
+        uuid: answeredSession?.uuid || callUuid || null,
+        iceCandidates: iceForCaller.map((i) => ({
+          candidate: i.candidate,
+          fromUserId: i.fromUserId,
+        })),
+      });
+
+      // Stop ringing / dismiss CallKit UI on all other devices for this account
+      const elsewherePayload = {
+        uuid: answeredSession?.uuid || callUuid || null,
+        callerId,
+        callType,
+        message: 'Call answered on another device',
+      };
+      const { socketIds } = await this.emitToUserExcept(
+        calleeId,
+        socket.id,
+        'callAnsweredElsewhere',
+        elsewherePayload,
+      );
       console.log(
-        `[Call] answerCall blocked — already active elsewhere uuid=${session?.uuid || 'n/a'}`,
+        `[Call] callAnsweredElsewhere → otherDevices=${socketIds.length} uuid=${elsewherePayload.uuid}`,
       );
-      socket.emit('callAlreadyActive', {
-        uuid: session?.uuid || callUuid || null,
-        callerId,
-        callType,
-        message: 'This call is already active on another device',
-      });
-      return;
-    }
 
-    // Callee already in a different call
-    const calleePartner = this.getPartner(calleeId);
-    if (calleePartner && calleePartner !== callerId) {
-      const busy = await this.buildBusyPayload(
-        calleeId,
-        callType,
-        'caller_busy',
+      // Deliver buffered ICE both ways (and keep copies peeked above for callers that apply from payload)
+      const toCaller = this.callSessionService.drainIceFor(callerId);
+      for (const item of toCaller) {
+        this.socketService.emitToUser(callerId, 'iceCandidate', {
+          candidate: item.candidate,
+          fromUserId: item.fromUserId,
+        });
+      }
+      const toCallee = this.callSessionService.drainIceFor(calleeId);
+      for (const item of toCallee) {
+        socket.emit('iceCandidate', {
+          candidate: item.candidate,
+          fromUserId: item.fromUserId,
+        });
+        this.socketService.emitToUser(calleeId, 'iceCandidate', {
+          candidate: item.candidate,
+          fromUserId: item.fromUserId,
+        });
+      }
+      console.log(
+        `[Call] answerCall DONE callee=${calleeId} caller=${callerId} uuid=${answeredSession?.uuid || callUuid || 'n/a'} iceCaller=${iceForCaller.length} flushedCaller=${toCaller.length} flushedCallee=${toCallee.length} elapsedMs=${Date.now() - startedAt}`,
       );
-      socket.emit('callBusy', busy);
-      return;
-    }
-
-    // Caller already in a different call
-    const callerPartner = this.getPartner(callerId);
-    if (callerPartner && callerPartner !== calleeId) {
-      const busy = await this.buildBusyPayload(
-        callerId,
-        callType,
-        'callee_busy',
+    } catch (err: any) {
+      console.error(
+        `[Call] answerCall FAILED callee=${calleeId} caller=${callerId} socket=${socket.id} elapsedMs=${Date.now() - startedAt} err=${err?.message || err}`,
+        err?.stack || err,
       );
-      socket.emit('callBusy', busy);
-      return;
-    }
-
-    // Ringing session exists for a different pair involving callee/caller
-    const calleeRinging = this.callSessionService.findActiveForUser(calleeId);
-    if (
-      calleeRinging &&
-      !(
-        calleeRinging.callerId === callerId &&
-        calleeRinging.calleeId === calleeId
-      )
-    ) {
-      const busy = await this.buildBusyPayload(
-        calleeId,
-        callType,
-        'caller_busy',
+      this.emitCallConnectionError(
+        socket,
+        'ANSWER_CALL_FAILED',
+        err?.message || 'Failed to answer call',
+        { callerId, calleeId, uuid: callUuid || null },
       );
-      socket.emit('callBusy', busy);
-      return;
     }
-
-    this.setCallPair(callerId, calleeId);
-    const answeredSession = this.callSessionService.markAnswered(
-      callerId,
-      calleeId,
-      socket.id,
-    );
-    this.clearDisconnectGrace(calleeId);
-    this.clearDisconnectGrace(callerId);
-
-    const iceForCaller = this.callSessionService.peekIceFor(callerId);
-    this.socketService.emitToUser(callerId, 'callAnswered', {
-      answer: payload.answer,
-      calleeId,
-      callType,
-      uuid: answeredSession?.uuid || callUuid || null,
-      iceCandidates: iceForCaller.map((i) => ({
-        candidate: i.candidate,
-        fromUserId: i.fromUserId,
-      })),
-    });
-
-    // Stop ringing / dismiss CallKit UI on all other devices for this account
-    const elsewherePayload = {
-      uuid: answeredSession?.uuid || callUuid || null,
-      callerId,
-      callType,
-      message: 'Call answered on another device',
-    };
-    const { socketIds } = await this.emitToUserExcept(
-      calleeId,
-      socket.id,
-      'callAnsweredElsewhere',
-      elsewherePayload,
-    );
-    console.log(
-      `[Call] callAnsweredElsewhere → otherDevices=${socketIds.length} uuid=${elsewherePayload.uuid}`,
-    );
-
-    // Deliver buffered ICE both ways (and keep copies peeked above for callers that apply from payload)
-    const toCaller = this.callSessionService.drainIceFor(callerId);
-    for (const item of toCaller) {
-      this.socketService.emitToUser(callerId, 'iceCandidate', {
-        candidate: item.candidate,
-        fromUserId: item.fromUserId,
-      });
-    }
-    const toCallee = this.callSessionService.drainIceFor(calleeId);
-    for (const item of toCallee) {
-      socket.emit('iceCandidate', {
-        candidate: item.candidate,
-        fromUserId: item.fromUserId,
-      });
-      this.socketService.emitToUser(calleeId, 'iceCandidate', {
-        candidate: item.candidate,
-        fromUserId: item.fromUserId,
-      });
-    }
-    console.log(
-      `[Call] answerCall ice → callerPayload=${iceForCaller.length} flushedCaller=${toCaller.length} flushedCallee=${toCallee.length}`,
-    );
   }
 
   @SubscribeMessage('iceCandidate')

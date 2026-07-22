@@ -20,19 +20,34 @@ export class WebrtcController {
       req?.user?.sub?.toString() ||
       undefined;
 
-    const result = await this.webrtcService.getIceServers(userId);
+    const startedAt = Date.now();
+    this.logger.log(`[WebRTC] GET ice-servers start user=${userId || 'anon'}`);
 
-    if (!result.hasTurn) {
+    try {
+      const result = await this.webrtcService.getIceServers(userId);
+
+      if (!result.hasTurn) {
+        this.logger.error(
+          `[WebRTC] GET ice-servers STUN-only user=${userId || 'anon'} provider=${result.provider} elapsedMs=${Date.now() - startedAt} — production web↔mobile may fail after answer`,
+        );
+      } else {
+        this.logger.log(
+          `[WebRTC] GET ice-servers ok user=${userId || 'anon'} provider=${result.provider} hasTurn=true servers=${result.iceServers?.length || 0} elapsedMs=${Date.now() - startedAt}`,
+        );
+      }
+
+      return {
+        iceServers: result.iceServers,
+        ttl: result.ttl,
+        provider: result.provider,
+        hasTurn: result.hasTurn,
+      };
+    } catch (err: any) {
       this.logger.error(
-        '[WebRTC] GET ice-servers returning STUN-only — production web↔mobile will fail after answer',
+        `[WebRTC] GET ice-servers FAILED user=${userId || 'anon'} elapsedMs=${Date.now() - startedAt} err=${err?.message || err}`,
+        err?.stack,
       );
+      throw err;
     }
-
-    return {
-      iceServers: result.iceServers,
-      ttl: result.ttl,
-      provider: result.provider,
-      hasTurn: result.hasTurn,
-    };
   }
 }
