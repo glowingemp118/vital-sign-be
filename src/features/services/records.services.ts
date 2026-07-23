@@ -71,29 +71,24 @@ export class RecordService {
         return;
       }
 
-      const vitalName: string = vitalDoc.title ?? vitalDoc.name ?? vitalDoc.key ?? 'Vital';
+      const vitalName: string =
+        vitalDoc.title ?? vitalDoc.name ?? vitalDoc.key ?? 'Vital';
+      const unit = vitalDoc.unit ? ` ${vitalDoc.unit}` : '';
+      const level = vstatus === 'critical' ? 'critical' : 'high';
+      const title =
+        level === 'critical' ? `Critical ${vitalName}` : `High ${vitalName}`;
+      const body = `${vitalName} is ${value}${unit}`.trim();
 
-      const { title, message } =
-        this.notificationService.buildNotificationContent(
-          vstatus,
-          vitalName,
-          value,
-        );
-      const object = {
-        vitalId: JSON.stringify(vitalDoc._id),
-        vitalKey: vitalDoc.key,
-        value: String(value),
-        status: vstatus,
-        priority: vstatus === 'critical' ? 'critical' : 'high',
-      };
-      await this.notificationService.sendNotification({
-        userId: userId,
+      await this.notificationService.sendVitalAlertPush({
+        userId,
+        level,
         title,
-        message,
-        type: 'vital',
-        object: object,
-        // Skip repeat FCM for same vital+status within a short window
-        dedupeMinutes: vstatus === 'critical' ? 10 : 30,
+        body,
+        vitalKey: vitalDoc.key,
+        vitalId: vitalDoc._id,
+        value: String(value),
+        // Skip repeat FCM for same vital+level within a short window
+        dedupeMinutes: level === 'critical' ? 10 : 30,
       });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
