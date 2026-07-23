@@ -280,12 +280,21 @@ export class NotificationService {
         type === 'health_critical' ||
         type === 'health_alert';
 
+      // Dedupe only identical vital+level+value (changing 32→30 must still push)
       const recentDuplicate = isVitalAlert
         ? await this.notificationModel
             .findOne({
               user: userId,
-              type: { $in: ['vital', 'vital_alert', 'health_critical', 'health_alert'] },
+              type: {
+                $in: [
+                  'vital',
+                  'vital_alert',
+                  'health_critical',
+                  'health_alert',
+                ],
+              },
               'object.vitalKey': object?.vitalKey,
+              'object.value': String(object?.value ?? ''),
               $or: [
                 { 'object.status': object?.status || object?.level },
                 { 'object.level': object?.level || object?.status },
@@ -298,7 +307,7 @@ export class NotificationService {
 
       if (recentDuplicate && isVitalAlert) {
         this.logger.log(
-          `[FCM] skip duplicate vital push userId=${userId} vital=${object?.vitalKey} level=${object?.level || object?.status} within=${windowMinutes}m`,
+          `[FCM] skip duplicate vital push userId=${userId} vital=${object?.vitalKey} level=${object?.level || object?.status} value=${object?.value} within=${windowMinutes}m`,
         );
         return {
           success: true,
@@ -363,7 +372,8 @@ export class NotificationService {
           priority: 'high',
           ttl: 60_000,
           notification: {
-            channelId: isCritical ? 'vital_critical' : 'vital_alerts',
+            // Must match mobile Notifee channels (health_critical / health_alert)
+            channelId: isCritical ? 'health_critical' : 'health_alert',
             priority: 'high',
             defaultSound: true,
             visibility: 'public',

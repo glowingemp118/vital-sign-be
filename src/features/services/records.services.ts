@@ -87,8 +87,8 @@ export class RecordService {
         vitalKey: vitalDoc.key,
         vitalId: vitalDoc._id,
         value: String(value),
-        // Skip repeat FCM for same vital+level within a short window
-        dedupeMinutes: level === 'critical' ? 10 : 30,
+        // Short window — same vital+level+value only (value changes re-alert)
+        dedupeMinutes: level === 'critical' ? 2 : 15,
       });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
@@ -316,14 +316,14 @@ export class RecordService {
 
       recordOps.push(result.op);
 
-      // Doctor alert if: brand new record OR status got worse/changed
+      // Doctor alert if: brand new record OR status got worse/changed OR value changed while abnormal
       const isAbnormal = !['normal', 'unknown', 'not-measured'].includes(
         body.vstatus,
       );
       if (
         isAbnormal &&
         body.vstatus !== 'medium' &&
-        (result.isNew || result.statusChanged)
+        (result.isNew || result.statusChanged || result.valueChanged)
       ) {
         doctorAlerts.push(body);
       }
@@ -332,10 +332,11 @@ export class RecordService {
       const alertEntry = buildAlertEntry(vitalDoc, body);
       if (alertEntry) alertsToAdd.push(alertEntry); // re-add if abnormal
 
-      // FCM only for high/critical AND only when new or status changed (no spam)
+      // FCM for high/critical when NEW, status changes, OR value changes while
+      // still critical/high — required so force-killed apps still get a tray alert.
       if (
         shouldSendVitalPush(body.vstatus) &&
-        (result.isNew || result.statusChanged)
+        (result.isNew || result.statusChanged || result.valueChanged)
       ) {
         notifications.push(
           this.createVitalNotification(uid, vitalDoc, body.value, body.vstatus),
