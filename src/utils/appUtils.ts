@@ -225,6 +225,8 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
     return {
       isNew: false,
       statusChanged: existing.status !== status, // ← did severity change?
+      // Needed for force-killed app FCM: HR 32→30 stays "critical" but must still push
+      valueChanged: existing.value !== value,
       op: {
         updateOne: {
           filter: { _id: existing._id },
@@ -237,6 +239,7 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   return {
     isNew: true,
     statusChanged: false,
+    valueChanged: true,
     op: {
       insertOne: {
         document: {
