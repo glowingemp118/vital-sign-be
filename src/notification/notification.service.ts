@@ -58,13 +58,13 @@ export class NotificationService {
     }),
 
     high: (vitalName, value) => ({
-      title: `Health Alert — Check In Required`,
-      message: `Your vitals show an unusual pattern. Are you feeling okay?`,
+      title: `Health Alert — ${vitalName}`,
+      message: `${vitalName} is high (${value}). Please check how you feel and review your vitals.`,
     }),
 
     critical: (vitalName, value) => ({
-      title: `High Risk Detected — Response Required`,
-      message: `Your pulse spiked significantly. Are you in pain? Respond immediately.`,
+      title: `Critical Alert — ${vitalName}`,
+      message: `${vitalName} is critically abnormal (${value}). Please respond and seek help if needed.`,
     }),
 
     emergency: (vitalName, value) => ({
@@ -159,8 +159,12 @@ export class NotificationService {
   }
   async sendNotification(body: any) {
     try {
-      let { userId, title, message, type, object } = body;
+      let { userId, title, message, type, object, dedupeMinutes } = body;
       userId = userId?.toString();
+      const windowMinutes =
+        typeof dedupeMinutes === 'number' && dedupeMinutes > 0
+          ? dedupeMinutes
+          : 5;
 
       const userDevices = await this.findUserDevices(userId);
 
@@ -205,10 +209,31 @@ export class NotificationService {
       }
 
       this.logger.log(
-        `[FCM] send userId=${userId} tokens=${validTokens.length} project=${process.env.FIREBASE_PROJECT_ID}`,
+        `[FCM] send userId=${userId} type=${type || 'n/a'} status=${object?.status || 'n/a'} vital=${object?.vitalKey || 'n/a'} tokens=${validTokens.length} project=${process.env.FIREBASE_PROJECT_ID}`,
       );
 
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const dedupeSince = new Date(Date.now() - windowMinutes * 60 * 1000);
+      const recentDuplicate = await this.notificationModel
+        .findOne({
+          user: userId,
+          type,
+          'object.vitalKey': object?.vitalKey,
+          'object.status': object?.status,
+          createdAt: { $gte: dedupeSince },
+        })
+        .select('_id')
+        .lean();
+
+      if (recentDuplicate && type === 'vital') {
+        this.logger.log(
+          `[FCM] skip duplicate vital push userId=${userId} vital=${object?.vitalKey} status=${object?.status} within=${windowMinutes}m`,
+        );
+        return {
+          success: true,
+          message: 'Duplicate vital notification skipped',
+          skipped: true,
+        };
+      }
 
       await this.notificationModel.updateOne(
         {
@@ -217,7 +242,7 @@ export class NotificationService {
           message,
           type,
           object,
-          createdAt: { $gte: fiveMinutesAgo },
+          createdAt: { $gte: dedupeSince },
         },
         {
           $set: {
@@ -243,20 +268,26 @@ export class NotificationService {
         ]),
       );
 
-      const notifyPayload = {
+      const isCritical = String(object?.status || '').toLowerCase() === 'critical';
+      const notifyPayload: any = {
         notification: {
           title,
           body: message,
         },
         data,
         tokens: validTokens,
+        android: {
+          priority: 'high',
+        },
         apns: {
           headers: {
             'apns-priority': '10',
+            ...(isCritical ? { 'apns-push-type': 'alert' } : {}),
           },
           payload: {
             aps: {
               sound: 'default',
+              ...(isCritical ? { 'content-available': 1 } : {}),
             },
           },
         },

@@ -68,14 +68,32 @@ type VitalStatus =
   | 'critical'
   | 'unknown';
 type AlertStatus = Exclude<VitalStatus, 'normal' | 'unknown'>;
-export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
-  const num = Number(value);
 
-  switch (vital) {
+/** Strip units / noise so "30 bpm", "97%", "120/80 mmHg" still classify. */
+export function normalizeVitalRawValue(vital: string, value: any): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  if (vital === 'bloodPressure') {
+    const match = raw.match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+    return match ? `${match[1]}/${match[2]}` : raw;
+  }
+
+  const match = raw.match(/-?\d+(\.\d+)?/);
+  return match ? match[0] : raw;
+}
+
+export function getVitalStatus(vital: VitalKey | string, value: string): VitalStatus {
+  const key = String(vital || '');
+  const normalized = normalizeVitalRawValue(key, value);
+  const num = Number(normalized);
+
+  switch (key) {
     case 'bloodPressure': {
-      const [s, d] = value.split('/').map(Number);
+      const [s, d] = normalized.split('/').map(Number);
       if (isNaN(s) || isNaN(d)) return 'unknown';
 
+      // Shock-range / hypertensive emergency
       if (s >= 180 || d >= 120 || s < 70 || d < 40) return 'critical';
       if (s < 90 || d < 60) return 'low';
       if (s > 140 || d > 90) return 'high';
@@ -85,7 +103,8 @@ export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
 
     case 'heartRate':
       if (isNaN(num)) return 'unknown';
-      if (num < 40 || num > 130) return 'critical';
+      // HR ≈ 30 (severe bradycardia) and extreme tachycardia → critical
+      if (num <= 40 || num >= 130) return 'critical';
       if (num < 60) return 'low';
       if (num > 110) return 'high';
       if (num > 100) return 'medium';
@@ -100,6 +119,7 @@ export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
       return 'normal';
 
     case 'oxygenSaturation':
+    case 'spo2':
       if (isNaN(num)) return 'unknown';
       if (num < 90) return 'critical';
       if (num < 92) return 'low';
@@ -107,6 +127,7 @@ export function getVitalStatus(vital: VitalKey, value: string): VitalStatus {
       return 'normal';
 
     case 'bloodGlucose':
+    case 'glucose':
       if (isNaN(num)) return 'unknown';
       if (num < 54 || num > 250) return 'critical';
       if (num < 70) return 'low';
@@ -136,7 +157,7 @@ const STATUS_COPY: Record<
   critical: {
     label: (t) => `Critical ${t}`,
     message: (t, v, u) =>
-      `Dangerously abnormal ${t.toLowerCase()} detected (${v}${u ? ` ${u}` : ''})`,
+      `Critical ${t.toLowerCase()} detected (${v}${u ? ` ${u}` : ''}). Immediate attention may be needed.`,
   },
   medium: {
     label: (t) => `Medium ${t}`,
@@ -231,6 +252,7 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
 }
 
 export function buildAlertEntry(vitalDoc: any, body: any) {
+  // Persist clinical alerts for low/high/critical (not normal/medium noise)
   if (['normal', 'medium', 'unknown', 'not-measured'].includes(body.vstatus))
     return null; // no alert needed
   const msg = getVitalMessage(vitalDoc, body.value, body.vstatus);
@@ -243,4 +265,9 @@ export function buildAlertEntry(vitalDoc: any, body: any) {
     value: body.value,
     recorded_at: new Date(body.recorded_at),
   };
+}
+
+/** FCM only for clinically serious events — mobile already handles local "Vitals Updated". */
+export function shouldSendVitalPush(status: string): boolean {
+  return status === 'high' || status === 'critical';
 }

@@ -19,6 +19,7 @@ import {
   getLast24HoursBoundary,
   getVitalMessage,
   getVitalStatus,
+  shouldSendVitalPush,
 } from 'src/utils/appUtils';
 import { User } from 'src/user/schemas/user.schema';
 import moment from 'moment-timezone';
@@ -66,7 +67,11 @@ export class RecordService {
     vstatus: string,
   ): Promise<void> {
     try {
-      const vitalName: string = vitalDoc.name ?? vitalDoc.key ?? 'Vital';
+      if (!shouldSendVitalPush(vstatus)) {
+        return;
+      }
+
+      const vitalName: string = vitalDoc.title ?? vitalDoc.name ?? vitalDoc.key ?? 'Vital';
 
       const { title, message } =
         this.notificationService.buildNotificationContent(
@@ -75,11 +80,11 @@ export class RecordService {
           value,
         );
       const object = {
-        // matches your Notification.object field
         vitalId: JSON.stringify(vitalDoc._id),
         vitalKey: vitalDoc.key,
-        value,
+        value: String(value),
         status: vstatus,
+        priority: vstatus === 'critical' ? 'critical' : 'high',
       };
       await this.notificationService.sendNotification({
         userId: userId,
@@ -87,6 +92,8 @@ export class RecordService {
         message,
         type: 'vital',
         object: object,
+        // Skip repeat FCM for same vital+status within a short window
+        dedupeMinutes: vstatus === 'critical' ? 10 : 30,
       });
     } catch (err) {
       // Never let a notification failure break the record-saving flow
@@ -167,7 +174,10 @@ export class RecordService {
       if (body.isSaved) {
         await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
 
-        await this.createVitalNotification(user, vitalDoc, value, vstatus);
+        // FCM only for high/critical — mobile handles local sparse "Vitals Updated"
+        if (shouldSendVitalPush(vstatus)) {
+          await this.createVitalNotification(user, vitalDoc, value, vstatus);
+        }
       }
 
       return savedRecord;
@@ -302,6 +312,9 @@ export class RecordService {
       if (!vitalDoc) continue;
 
       body.vstatus = getVitalStatus(vitalDoc?.key, body.value);
+      console.log(
+        `[Record/bulk] classify user=${uid} vital=${vitalDoc.key} value=${body.value} status=${body.vstatus}`,
+      );
 
       const result = buildRecordOp(body, uid, existingMap.get(body.vital));
       if (!result) continue; // unchanged, skip everything
@@ -323,7 +336,12 @@ export class RecordService {
 
       const alertEntry = buildAlertEntry(vitalDoc, body);
       if (alertEntry) alertsToAdd.push(alertEntry); // re-add if abnormal
-      if (isAbnormal) {
+
+      // FCM only for high/critical AND only when new or status changed (no spam)
+      if (
+        shouldSendVitalPush(body.vstatus) &&
+        (result.isNew || result.statusChanged)
+      ) {
         notifications.push(
           this.createVitalNotification(uid, vitalDoc, body.value, body.vstatus),
         );
@@ -350,10 +368,16 @@ export class RecordService {
       );
     }
 
-    // ── 5. Fire-and-forget (don't block response) ─────────────────────
+    // ── 5. Fire-and-forget push (don't block response) ────────────────
     Promise.allSettled(notifications).catch(console.error);
     if (doctorAlerts.length) this.maybeSendDoctorAlert(req.user, doctorAlerts);
-    return this.homeRecords({ user: req.user });
+
+    // Return latest home payload with classified statuses for immediate mobile re-check
+    const home = await this.homeRecords({ user: req.user });
+    console.log(
+      `[Record/bulk] done user=${uid} wrote=${recordOps.length} alerts=${alertsToAdd.length} pushQueued=${notifications.length}`,
+    );
+    return home;
   }
   getDateFilter(
     from: string,
@@ -578,19 +602,38 @@ export class RecordService {
       time || '7days',
       user?.timezone,
     );
-    const alert = await this.alertModel
+    const alertDoc = await this.alertModel
       .findOne({
         user: new mongoose.Types.ObjectId(user._id),
-        'alerts.recorded_at': { $gte: startDate, $lte: now },
       })
       .lean()
       .exec();
+
+    // Prefer recent alerts; always keep the latest alert per vital for home refresh
+    const allAlerts = Array.isArray(alertDoc?.alerts) ? alertDoc.alerts : [];
+    const recentAlerts = allAlerts.filter((a: any) => {
+      const at = a?.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+      return at >= startDate.getTime() && at <= now.getTime();
+    });
+    const alerts =
+      recentAlerts.length > 0
+        ? recentAlerts
+        : allAlerts
+            .slice()
+            .sort(
+              (a: any, b: any) =>
+                new Date(b.recorded_at || 0).getTime() -
+                new Date(a.recorded_at || 0).getTime(),
+            )
+            .slice(0, 10);
+
     return {
       ...(userData && { user: userData }),
       records: homeRes,
-      alerts: alert?.alerts || [],
+      alerts,
       activity: activityRes,
       trendGraph: bpGraph || [],
+      classifiedAt: new Date().toISOString(),
     };
   }
 
