@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
@@ -11,6 +13,7 @@ import { finalRes, paginationPipeline } from 'src/utils/dbUtils';
 import admin from '../config/firebase';
 import { Notification } from './notification.schema';
 import { Alert } from 'src/features/schemas/alert.schema';
+import { Vital } from 'src/features/schemas/vital.schema';
 import { ApnsVoipService } from './apns-voip.service';
 
 type TemplateFn = (
@@ -20,17 +23,117 @@ type TemplateFn = (
   title: string;
   message: string;
 };
+
 @Injectable()
-export class NotificationService {
+export class NotificationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationService.name);
+  /** Re-push critical FCM every 45s until PUT /notification/yes-i-am-ok clears alerts */
+  private readonly CRITICAL_RETRY_MS = 45_000;
+  private criticalPollTimer: NodeJS.Timeout | null = null;
+  private criticalPollRunning = false;
 
   constructor(
     @InjectModel(Device.name) private readonly deviceModel: Model<Device>,
     @InjectModel(Alert.name) private readonly alertModel: Model<Alert>,
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<Notification>,
+    @InjectModel(Vital.name) private readonly vitalModel: Model<Vital>,
     private readonly apnsVoipService: ApnsVoipService,
   ) {}
+
+  onModuleInit() {
+    this.criticalPollTimer = setInterval(() => {
+      void this.pollAndRepushCriticalAlerts();
+    }, this.CRITICAL_RETRY_MS);
+    this.logger.log(
+      `[FCM] critical retry poller started interval=${this.CRITICAL_RETRY_MS}ms`,
+    );
+  }
+
+  onModuleDestroy() {
+    if (this.criticalPollTimer) {
+      clearInterval(this.criticalPollTimer);
+      this.criticalPollTimer = null;
+    }
+  }
+
+  /**
+   * Every 45s: if a user still has critical alerts (not cleared via Yes I Am Ok),
+   * re-send FCM so force-killed apps keep getting tray alerts.
+   */
+  private async pollAndRepushCriticalAlerts() {
+    if (this.criticalPollRunning) return;
+    this.criticalPollRunning = true;
+    try {
+      const docs = await this.alertModel
+        .find({ 'alerts.status': 'critical' })
+        .select('user alerts')
+        .lean();
+
+      if (!docs.length) return;
+
+      const vitalKeys = [
+        ...new Set(
+          docs.flatMap((d) =>
+            (d.alerts || [])
+              .filter((a: any) => a.status === 'critical')
+              .map((a: any) => a.vital),
+          ),
+        ),
+      ];
+      const vitalDocs = vitalKeys.length
+        ? await this.vitalModel
+            .find({ key: { $in: vitalKeys } })
+            .select('_id key title unit')
+            .lean()
+        : [];
+      const vitalByKey = new Map(vitalDocs.map((v: any) => [v.key, v]));
+
+      for (const doc of docs) {
+        const userId = String(doc.user);
+        const criticals = (doc.alerts || []).filter(
+          (a: any) => a.status === 'critical',
+        );
+        for (const alert of criticals) {
+          const vitalDoc: any = vitalByKey.get(alert.vital);
+          const vitalName =
+            vitalDoc?.title || alert.label || alert.vital || 'Vital';
+          const unit = vitalDoc?.unit ? ` ${vitalDoc.unit}` : '';
+          const value = String(alert.value ?? '');
+          const title = `Critical ${vitalName}`;
+          const body = `${vitalName} is ${value}${unit}`.trim();
+
+          this.logger.log(
+            `[FCM] critical retry push user=${userId} vital=${alert.vital} value=${value}`,
+          );
+          await this.sendVitalAlertPush({
+            userId,
+            level: 'critical',
+            title,
+            body,
+            vitalKey: String(alert.vital || ''),
+            vitalId: vitalDoc?._id,
+            value,
+            dedupeMinutes: 0,
+            force: true,
+          });
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(
+        `[FCM] critical retry poll failed: ${e?.message || e}`,
+      );
+    } finally {
+      this.criticalPollRunning = false;
+    }
+  }
+
+  /** Stops in-process tracking; YesIAmOk clears DB alerts so the poller stops too. */
+  clearCriticalRetriesForUser(userId: string) {
+    this.logger.log(
+      `[FCM] YesIAmOk — stop critical retries user=${userId}`,
+    );
+  }
 
   /** Devices docs may have user as ObjectId or legacy string — try both. */
   private async findUserDevices(userId: string) {
@@ -109,6 +212,7 @@ export class NotificationService {
     vitalId?: any;
     value?: string;
     dedupeMinutes?: number;
+    force?: boolean;
   }) {
     const {
       userId,
@@ -118,29 +222,30 @@ export class NotificationService {
       vitalKey = '',
       vitalId,
       value = '',
-      dedupeMinutes = level === 'critical' ? 10 : 30,
+      dedupeMinutes = level === 'critical' ? 2 : 15,
+      force = false,
     } = params;
 
     const typeAlias =
       level === 'critical' ? 'health_critical' : 'health_alert';
 
+    // Immediate FCM; critical retries every 45s via pollAndRepushCriticalAlerts
+    // until PUT /notification/yes-i-am-ok clears the user's critical alerts.
     return this.sendNotification({
       userId,
       title,
       message: body,
       type: 'vital_alert',
-      dedupeMinutes,
+      dedupeMinutes: force ? 0 : dedupeMinutes,
+      force,
       object: {
-        // Primary mobile contract
         type: 'vital_alert',
         level,
         title,
         body,
-        // Compatibility aliases for older / alternate handlers
         health_type: typeAlias,
         monitoring_alert: level === 'critical' ? '1' : '0',
         health_sync: '1',
-        // Extra context for headless sync
         vitalKey: String(vitalKey || ''),
         vitalId: vitalId ? String(vitalId) : '',
         value: String(value || ''),
@@ -220,12 +325,14 @@ export class NotificationService {
   }
   async sendNotification(body: any) {
     try {
-      let { userId, title, message, type, object, dedupeMinutes } = body;
+      let { userId, title, message, type, object, dedupeMinutes, force } = body;
       userId = userId?.toString();
       const windowMinutes =
-        typeof dedupeMinutes === 'number' && dedupeMinutes > 0
-          ? dedupeMinutes
-          : 5;
+        force || dedupeMinutes === 0
+          ? 0
+          : typeof dedupeMinutes === 'number' && dedupeMinutes > 0
+            ? dedupeMinutes
+            : 5;
 
       const userDevices = await this.findUserDevices(userId);
 
@@ -280,30 +387,30 @@ export class NotificationService {
         type === 'health_critical' ||
         type === 'health_alert';
 
-      // Dedupe only identical vital+level+value (changing 32→30 must still push)
-      const recentDuplicate = isVitalAlert
-        ? await this.notificationModel
-            .findOne({
-              user: userId,
-              type: {
-                $in: [
-                  'vital',
-                  'vital_alert',
-                  'health_critical',
-                  'health_alert',
+      const recentDuplicate =
+        windowMinutes > 0 && isVitalAlert
+          ? await this.notificationModel
+              .findOne({
+                user: userId,
+                type: {
+                  $in: [
+                    'vital',
+                    'vital_alert',
+                    'health_critical',
+                    'health_alert',
+                  ],
+                },
+                'object.vitalKey': object?.vitalKey,
+                'object.value': String(object?.value ?? ''),
+                $or: [
+                  { 'object.status': object?.status || object?.level },
+                  { 'object.level': object?.level || object?.status },
                 ],
-              },
-              'object.vitalKey': object?.vitalKey,
-              'object.value': String(object?.value ?? ''),
-              $or: [
-                { 'object.status': object?.status || object?.level },
-                { 'object.level': object?.level || object?.status },
-              ],
-              createdAt: { $gte: dedupeSince },
-            })
-            .select('_id')
-            .lean()
-        : null;
+                createdAt: { $gte: dedupeSince },
+              })
+              .select('_id')
+              .lean()
+          : null;
 
       if (recentDuplicate && isVitalAlert) {
         this.logger.log(
@@ -316,31 +423,34 @@ export class NotificationService {
         };
       }
 
-      await this.notificationModel.updateOne(
-        {
-          user: userId,
-          title,
-          message,
-          type,
-          object,
-          createdAt: { $gte: dedupeSince },
-        },
-        {
-          $set: {
-            updatedAt: new Date(),
-          },
-          $setOnInsert: {
+      // Don't flood in-app notification history on 45s critical retries
+      if (!force) {
+        await this.notificationModel.updateOne(
+          {
             user: userId,
             title,
             message,
             type,
             object,
+            createdAt: { $gte: dedupeSince },
           },
-        },
-        {
-          upsert: true,
-        },
-      );
+          {
+            $set: {
+              updatedAt: new Date(),
+            },
+            $setOnInsert: {
+              user: userId,
+              title,
+              message,
+              type,
+              object,
+            },
+          },
+          {
+            upsert: true,
+          },
+        );
+      }
 
       // Flatten data for FCM — all values must be strings
       const data = Object.fromEntries(
@@ -761,18 +871,22 @@ export class NotificationService {
     }
   }
   async YesIAmOk(userId: string) {
-    const alert = await this.alertModel.findOne({
-      user: new mongoose.Types.ObjectId(userId),
-    });
+    const uid = String(userId);
+    this.clearCriticalRetriesForUser(uid);
 
-    if (!alert) {
-      throw new NotFoundException('No alerts found');
-    }
-
-    return await this.alertModel.findByIdAndUpdate(
-      alert._id,
+    // Clear all alerts — critical poller stops re-pushing once none remain
+    const updated = await this.alertModel.findOneAndUpdate(
+      {
+        $or: [
+          { user: new mongoose.Types.ObjectId(uid) },
+          { user: uid },
+        ],
+      },
       { $set: { alerts: [] } },
       { new: true },
     );
+
+    this.logger.log(`[FCM] YesIAmOk cleared alerts user=${uid}`);
+    return updated || { message: 'No alerts found', cleared: true };
   }
 }
