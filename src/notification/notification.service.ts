@@ -89,6 +89,67 @@ export class NotificationService {
     return template(vitalName, value);
   }
 
+  /**
+   * Force-kill / background vital alert push.
+   * Data contract expected by mobile:
+   * {
+   *   type: "vital_alert",
+   *   level: "critical" | "high",
+   *   title: "Critical Heart Rate",
+   *   body: "Heart rate is 35 bpm"
+   * }
+   * Also includes aliases: health_critical | health_alert for older clients.
+   */
+  async sendVitalAlertPush(params: {
+    userId: any;
+    level: 'critical' | 'high';
+    title: string;
+    body: string;
+    vitalKey?: string;
+    vitalId?: any;
+    value?: string;
+    dedupeMinutes?: number;
+  }) {
+    const {
+      userId,
+      level,
+      title,
+      body,
+      vitalKey = '',
+      vitalId,
+      value = '',
+      dedupeMinutes = level === 'critical' ? 10 : 30,
+    } = params;
+
+    const typeAlias =
+      level === 'critical' ? 'health_critical' : 'health_alert';
+
+    return this.sendNotification({
+      userId,
+      title,
+      message: body,
+      type: 'vital_alert',
+      dedupeMinutes,
+      object: {
+        // Primary mobile contract
+        type: 'vital_alert',
+        level,
+        title,
+        body,
+        // Compatibility aliases for older / alternate handlers
+        health_type: typeAlias,
+        monitoring_alert: level === 'critical' ? '1' : '0',
+        health_sync: '1',
+        // Extra context for headless sync
+        vitalKey: String(vitalKey || ''),
+        vitalId: vitalId ? String(vitalId) : '',
+        value: String(value || ''),
+        status: level,
+        priority: level,
+      },
+    });
+  }
+
   async send(token: string, title: string, body: string) {
     return admin.messaging().send({
       token,
@@ -209,24 +270,35 @@ export class NotificationService {
       }
 
       this.logger.log(
-        `[FCM] send userId=${userId} type=${type || 'n/a'} status=${object?.status || 'n/a'} vital=${object?.vitalKey || 'n/a'} tokens=${validTokens.length} project=${process.env.FIREBASE_PROJECT_ID}`,
+        `[FCM] send userId=${userId} type=${type || 'n/a'} level=${object?.level || object?.status || 'n/a'} vital=${object?.vitalKey || 'n/a'} tokens=${validTokens.length} project=${process.env.FIREBASE_PROJECT_ID}`,
       );
 
       const dedupeSince = new Date(Date.now() - windowMinutes * 60 * 1000);
-      const recentDuplicate = await this.notificationModel
-        .findOne({
-          user: userId,
-          type,
-          'object.vitalKey': object?.vitalKey,
-          'object.status': object?.status,
-          createdAt: { $gte: dedupeSince },
-        })
-        .select('_id')
-        .lean();
+      const isVitalAlert =
+        type === 'vital' ||
+        type === 'vital_alert' ||
+        type === 'health_critical' ||
+        type === 'health_alert';
 
-      if (recentDuplicate && type === 'vital') {
+      const recentDuplicate = isVitalAlert
+        ? await this.notificationModel
+            .findOne({
+              user: userId,
+              type: { $in: ['vital', 'vital_alert', 'health_critical', 'health_alert'] },
+              'object.vitalKey': object?.vitalKey,
+              $or: [
+                { 'object.status': object?.status || object?.level },
+                { 'object.level': object?.level || object?.status },
+              ],
+              createdAt: { $gte: dedupeSince },
+            })
+            .select('_id')
+            .lean()
+        : null;
+
+      if (recentDuplicate && isVitalAlert) {
         this.logger.log(
-          `[FCM] skip duplicate vital push userId=${userId} vital=${object?.vitalKey} status=${object?.status} within=${windowMinutes}m`,
+          `[FCM] skip duplicate vital push userId=${userId} vital=${object?.vitalKey} level=${object?.level || object?.status} within=${windowMinutes}m`,
         );
         return {
           success: true,
@@ -261,15 +333,26 @@ export class NotificationService {
         },
       );
 
+      // Flatten data for FCM — all values must be strings
       const data = Object.fromEntries(
-        Object.entries({ type, ...object }).map(([key, value]) => [
-          key,
-          value == null ? '' : String(value),
-        ]),
+        Object.entries({
+          type: type || object?.type || '',
+          level: object?.level || object?.status || '',
+          title,
+          body: message,
+          ...object,
+        }).map(([key, value]) => [key, value == null ? '' : String(value)]),
       );
 
-      const isCritical = String(object?.status || '').toLowerCase() === 'critical';
+      const isCritical =
+        String(object?.level || object?.status || '')
+          .toLowerCase() === 'critical' ||
+        type === 'health_critical' ||
+        (type === 'vital_alert' &&
+          String(object?.level || '').toLowerCase() === 'critical');
+
       const notifyPayload: any = {
+        // Optional notification block — Android can show natively when app is killed
         notification: {
           title,
           body: message,
@@ -278,20 +361,35 @@ export class NotificationService {
         tokens: validTokens,
         android: {
           priority: 'high',
+          ttl: 60_000,
+          notification: {
+            channelId: isCritical ? 'vital_critical' : 'vital_alerts',
+            priority: 'high',
+            defaultSound: true,
+            visibility: 'public',
+          },
         },
         apns: {
           headers: {
             'apns-priority': '10',
-            ...(isCritical ? { 'apns-push-type': 'alert' } : {}),
+            'apns-push-type': 'alert',
           },
           payload: {
             aps: {
+              alert: {
+                title,
+                body: message,
+              },
               sound: 'default',
-              ...(isCritical ? { 'content-available': 1 } : {}),
+              'content-available': 1,
             },
           },
         },
       };
+
+      this.logger.log(
+        `[FCM] vital_alert payload userId=${userId} data.type=${data.type} data.level=${data.level} data.title=${data.title}`,
+      );
 
       const response = await admin.messaging().sendEachForMulticast(notifyPayload);
 
