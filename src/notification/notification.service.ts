@@ -58,8 +58,8 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Every 45s: if a user still has critical alerts (not cleared via Yes I Am Ok),
-   * re-send FCM so force-killed apps keep getting tray alerts.
+   * Every 45s: re-push critical FCM only for alerts the user has NOT
+   * acknowledged via I'm Okay. Acked alerts stay silent until the value changes.
    */
   private async pollAndRepushCriticalAlerts() {
     if (this.criticalPollRunning) return;
@@ -67,7 +67,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     try {
       const docs = await this.alertModel
         .find({ 'alerts.status': 'critical' })
-        .select('user alerts')
+        .select('user alerts acknowledged')
         .lean();
 
       if (!docs.length) return;
@@ -76,24 +76,35 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
         ...new Set(
           docs.flatMap((d) =>
             (d.alerts || [])
-              .filter((a: any) => a.status === 'critical')
+              .filter(
+                (a: any) => a.status === 'critical' && !a.acked,
+              )
               .map((a: any) => a.vital),
           ),
         ),
       ];
-      const vitalDocs = vitalKeys.length
-        ? await this.vitalModel
-            .find({ key: { $in: vitalKeys } })
-            .select('_id key title unit')
-            .lean()
-        : [];
+      if (!vitalKeys.length) return;
+
+      const vitalDocs = await this.vitalModel
+        .find({ key: { $in: vitalKeys } })
+        .select('_id key title unit')
+        .lean();
       const vitalByKey = new Map(vitalDocs.map((v: any) => [v.key, v]));
 
       for (const doc of docs) {
         const userId = String(doc.user);
-        const criticals = (doc.alerts || []).filter(
-          (a: any) => a.status === 'critical',
+        const ackSet = new Set(
+          (doc.acknowledged || []).map((s: string) => String(s)),
         );
+        const criticals = (doc.alerts || []).filter((a: any) => {
+          if (a.status !== 'critical' || a.acked) return false;
+          const key = `${String(a.vital || '').trim()}|${String(a.value ?? '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/bpm|mg\/?dl|mmhg|%/gi, '')}`;
+          return !ackSet.has(key);
+        });
         for (const alert of criticals) {
           const vitalDoc: any = vitalByKey.get(alert.vital);
           const vitalName =
@@ -128,7 +139,7 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Stops in-process tracking; YesIAmOk clears DB alerts so the poller stops too. */
+  /** Marks in-process stop; YesIAmOk also sets acked + acknowledged in DB. */
   clearCriticalRetriesForUser(userId: string) {
     this.logger.log(
       `[FCM] YesIAmOk — stop critical retries user=${userId}`,
@@ -874,19 +885,42 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
     const uid = String(userId);
     this.clearCriticalRetriesForUser(uid);
 
-    // Clear all alerts — critical poller stops re-pushing once none remain
+    const filter = {
+      $or: [
+        { user: new mongoose.Types.ObjectId(uid) },
+        { user: uid },
+      ],
+    };
+
+    const doc = await this.alertModel.findOne(filter).lean();
+    const existingAcks = new Set(
+      ((doc as any)?.acknowledged || []).map((s: string) => String(s)),
+    );
+    const alerts = ((doc as any)?.alerts || []).map((a: any) => {
+      const norm = String(a.value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/bpm|mg\/?dl|mmhg|%/gi, '');
+      const key = `${String(a.vital || '').trim()}|${norm}`;
+      existingAcks.add(key);
+      return { ...a, acked: true };
+    });
+
     const updated = await this.alertModel.findOneAndUpdate(
+      filter,
       {
-        $or: [
-          { user: new mongoose.Types.ObjectId(uid) },
-          { user: uid },
-        ],
+        $set: {
+          alerts,
+          acknowledged: Array.from(existingAcks),
+        },
       },
-      { $set: { alerts: [] } },
-      { new: true },
+      { new: true, upsert: true },
     );
 
-    this.logger.log(`[FCM] YesIAmOk cleared alerts user=${uid}`);
+    this.logger.log(
+      `[FCM] YesIAmOk acked alerts user=${uid} count=${alerts.length} acks=${existingAcks.size}`,
+    );
     return updated || { message: 'No alerts found', cleared: true };
   }
 }

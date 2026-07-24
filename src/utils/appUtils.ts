@@ -254,7 +254,21 @@ export function buildRecordOp(body: any, uid: ObjectId, existing: any) {
   };
 }
 
-export function buildAlertEntry(vitalDoc: any, body: any) {
+/** Stable ack key so I'm Okay sticks across syncs until the reading changes. */
+export function vitalAckKey(vitalKey: string, value: any): string {
+  const norm = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/bpm|mg\/?dl|mmhg|%/gi, '');
+  return `${String(vitalKey || '').trim()}|${norm}`;
+}
+
+export function buildAlertEntry(
+  vitalDoc: any,
+  body: any,
+  opts?: { acked?: boolean },
+) {
   // Persist clinical alerts for low/high/critical (not normal/medium noise)
   if (['normal', 'medium', 'unknown', 'not-measured'].includes(body.vstatus))
     return null; // no alert needed
@@ -267,6 +281,7 @@ export function buildAlertEntry(vitalDoc: any, body: any) {
     message: msg.message,
     value: body.value,
     recorded_at: new Date(body.recorded_at),
+    acked: Boolean(opts?.acked),
   };
 }
 

@@ -20,6 +20,7 @@ import {
   getVitalMessage,
   getVitalStatus,
   shouldSendVitalPush,
+  vitalAckKey,
 } from 'src/utils/appUtils';
 import { User } from 'src/user/schemas/user.schema';
 import moment from 'moment-timezone';
@@ -68,6 +69,37 @@ export class RecordService {
   ): Promise<void> {
     try {
       if (!shouldSendVitalPush(vstatus)) {
+        return;
+      }
+
+      const ackKey = vitalAckKey(vitalDoc.key, value);
+      const alertDoc = await this.alertModel
+        .findOne({
+          $or: [
+            { user: userId },
+            {
+              user:
+                userId && mongoose.Types.ObjectId.isValid(userId)
+                  ? new mongoose.Types.ObjectId(userId)
+                  : userId,
+            },
+          ],
+        })
+        .select('acknowledged alerts')
+        .lean();
+      const alreadyAcked = Boolean(
+        (alertDoc as any)?.acknowledged?.includes?.(ackKey) ||
+          (alertDoc as any)?.alerts?.some?.(
+            (a: any) =>
+              a.vital === vitalDoc.key &&
+              a.acked &&
+              vitalAckKey(a.vital, a.value) === ackKey,
+          ),
+      );
+      if (alreadyAcked) {
+        console.log(
+          `[FCM] skip createVitalNotification — acked ${vitalDoc.key}=${value}`,
+        );
         return;
       }
 
@@ -169,9 +201,30 @@ export class RecordService {
       if (body.isSaved) {
         await this.addAlert(user, vitalDoc, { value, recorded_at }, vstatus);
 
-        // FCM only for high/critical — mobile handles local sparse "Vitals Updated"
+        // FCM only for high/critical — skip if user already said I'm Okay for this value
         if (shouldSendVitalPush(vstatus)) {
-          await this.createVitalNotification(user, vitalDoc, value, vstatus);
+          const ackKey = vitalAckKey(vitalDoc.key, value);
+          const alertDoc = await this.alertModel
+            .findOne({ user })
+            .select('acknowledged alerts')
+            .lean();
+          const alreadyAcked = Boolean(
+            (alertDoc as any)?.acknowledged?.includes?.(ackKey) ||
+              (alertDoc as any)?.alerts?.some?.(
+                (a: any) =>
+                  a.vital === vitalDoc.key &&
+                  a.acked &&
+                  vitalAckKey(a.vital, a.value) === ackKey,
+              ),
+          );
+          if (!alreadyAcked) {
+            await this.createVitalNotification(
+              user,
+              vitalDoc,
+              value,
+              vstatus,
+            );
+          }
         }
       }
 
@@ -205,6 +258,21 @@ export class RecordService {
 
       const msg = getVitalMessage(vitalDoc, body.value, vstatus);
 
+      const ackKey = vitalAckKey(vitalDoc.key, body.value);
+      const alertDoc = await this.alertModel
+        .findOne({ user: userId })
+        .select('acknowledged alerts')
+        .lean();
+      const acked = Boolean(
+        (alertDoc as any)?.acknowledged?.includes?.(ackKey) ||
+          (alertDoc as any)?.alerts?.some?.(
+            (a: any) =>
+              a.vital === vitalDoc.key &&
+              a.acked &&
+              vitalAckKey(a.vital, a.value) === ackKey,
+          ),
+      );
+
       const alert = {
         vital: vitalDoc.key,
         status: vstatus,
@@ -212,6 +280,7 @@ export class RecordService {
         message: msg.message,
         value: body.value,
         recorded_at: body.recorded_at,
+        acked,
       };
 
       const result = await this.alertModel.updateOne(
@@ -225,6 +294,19 @@ export class RecordService {
           { $push: { alerts: alert } },
           { upsert: true },
         );
+      }
+
+      // Value changed away from an old ack → drop that vital's ack keys
+      if (!acked && alertDoc?.acknowledged?.length) {
+        const nextAcks = (alertDoc.acknowledged as string[]).filter(
+          (k) => !String(k).startsWith(`${vitalDoc.key}|`),
+        );
+        if (nextAcks.length !== alertDoc.acknowledged.length) {
+          await this.alertModel.updateOne(
+            { user: userId },
+            { $set: { acknowledged: nextAcks } },
+          );
+        }
       }
     } catch (error: any) {
       throw new Error(error?.message || 'Failed to add alert');
@@ -295,12 +377,27 @@ export class RecordService {
       existingRecords.map((r) => [String(r.vital), r]),
     );
 
+    // Preserve I'm Okay acks across wipe+re-add so 45s FCM retry stays silent.
+    const alertDoc = await this.alertModel
+      .findOne({ user: uid })
+      .select('acknowledged alerts')
+      .lean();
+    const ackSet = new Set<string>(
+      ((alertDoc as any)?.acknowledged || []).map((s: string) => String(s)),
+    );
+    for (const a of (alertDoc as any)?.alerts || []) {
+      if (a?.acked) {
+        ackSet.add(vitalAckKey(a.vital, a.value));
+      }
+    }
+
     // ── 3. Build ops in memory ────────────────────────────────────────
     const recordOps: any[] = [];
     const alertsToAdd: any[] = [];
     const vitalKeysToWipe: string[] = [];
     const notifications: Promise<any>[] = [];
     const doctorAlerts: any[] = [];
+    const acksToDropPrefixes: string[] = [];
 
     for (const body of deduped) {
       const vitalDoc: any = vitalMap.get(body.vital);
@@ -329,13 +426,20 @@ export class RecordService {
       }
       vitalKeysToWipe.push(vitalDoc.key); // always clear old alert
 
-      const alertEntry = buildAlertEntry(vitalDoc, body);
+      const thisAckKey = vitalAckKey(vitalDoc.key, body.value);
+      const isAcked = ackSet.has(thisAckKey);
+      // New/different reading → drop old ack for this vital so future criticals can alert
+      if (result.valueChanged && !isAcked) {
+        acksToDropPrefixes.push(`${vitalDoc.key}|`);
+      }
+
+      const alertEntry = buildAlertEntry(vitalDoc, body, { acked: isAcked });
       if (alertEntry) alertsToAdd.push(alertEntry); // re-add if abnormal
 
-      // FCM for high/critical when NEW, status changes, OR value changes while
-      // still critical/high — required so force-killed apps still get a tray alert.
+      // FCM for high/critical when NEW/status/value changes — never if I'm Okay for this value
       if (
         shouldSendVitalPush(body.vstatus) &&
+        !isAcked &&
         (result.isNew || result.statusChanged || result.valueChanged)
       ) {
         notifications.push(
@@ -345,6 +449,13 @@ export class RecordService {
     }
 
     // ── 4. Flush writes ───────────────────────────────────────────────
+    let nextAcks = Array.from(ackSet);
+    if (acksToDropPrefixes.length) {
+      nextAcks = nextAcks.filter(
+        (k) => !acksToDropPrefixes.some((p) => k.startsWith(p)),
+      );
+    }
+
     await Promise.all([
       recordOps.length &&
         this.recordModel.bulkWrite(recordOps, { ordered: false }),
@@ -356,10 +467,15 @@ export class RecordService {
         ),
     ]);
 
-    if (alertsToAdd.length) {
+    if (alertsToAdd.length || acksToDropPrefixes.length) {
       await this.alertModel.updateOne(
         { user: uid },
-        { $push: { alerts: { $each: alertsToAdd } } },
+        {
+          ...(alertsToAdd.length
+            ? { $push: { alerts: { $each: alertsToAdd } } }
+            : {}),
+          $set: { acknowledged: nextAcks },
+        },
         { upsert: true },
       );
     }
