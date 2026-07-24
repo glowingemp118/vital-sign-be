@@ -17,6 +17,8 @@ export class Alert {
         vital: String,
         value: String,
         recorded_at: Date,
+        /** User tapped I'm Okay — do not FCM-retry until value changes */
+        acked: { type: Boolean, default: false },
       },
     ],
     default: [],
@@ -28,7 +30,15 @@ export class Alert {
     vital: string;
     value: string;
     recorded_at: Date;
+    acked?: boolean;
   }>;
+
+  /**
+   * Signatures the user acknowledged via I'm Okay.
+   * Format: "vitalKey|normalizedValue" — blocks FCM/retry until value changes.
+   */
+  @Prop({ type: [String], default: [] })
+  acknowledged: string[];
 }
 
 export const AlertSchema = SchemaFactory.createForClass(Alert);
